@@ -1,0 +1,26 @@
+# Environment
+.env
+.venv/
+
+# Data — populated by ingestion or S3 pull, never committed
+data/
+logs/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.mypy_cache/
+.ruff_cache/
+dist/
+*.egg-info/
+
+# uv
+uv.lock         # commit this if working in a team; fine to ignore for solo learning project
+
+# Personal — not for public repo
+LEARNING.md
+
+# IDE
+.vscode/
+.idea/
