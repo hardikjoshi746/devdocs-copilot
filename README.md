@@ -6,6 +6,24 @@ A RAG-powered Q&A system over the FastAPI codebase and its documentation. Built 
 
 ---
 
+## Implementation Status
+
+| Phase | Component | Status |
+|---|---|---|
+| 1 | `ingestion/fetch_repo.py` — async GitHub issues fetcher | Done |
+| 1 | `ingestion/chunkers.py` — AST, heading, issue chunkers | Done |
+| 1 | `ingestion/embed_and_store.py` — embed → Chroma, BM25 pickle | Not started |
+| 2 | `retrieval/` — dense, sparse, hybrid RRF, reranker | Not started |
+| 3 | `query/` — HyDE rewriter, pipeline orchestrator | Not started |
+| 4 | `evaluator/` — retrieval evaluator, faithfulness check | Not started |
+| 5 | `monitoring/` — tracer, logger, Phoenix setup | Not started |
+| 5 | `eval/` — dataset, metrics, ablations | Not started |
+| — | `api/main.py` — /query, /health, /metrics | Not started |
+| — | `infra/` — s3_sync.sh, deploy_ec2.sh | Not started |
+| — | `tests/` — chunkers, retrieval, evaluator, pipeline | Not started |
+
+---
+
 ## What This Is (and Isn't)
 
 This is not a research prototype — it's a production-minded backend service that happens to use RAG. The AI techniques are chosen for measurable impact, not novelty. Every component has a failure mode documented, a metric tracking it, and a fallback when it goes wrong.
