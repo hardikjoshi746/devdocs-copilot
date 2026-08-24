@@ -12,7 +12,7 @@ A RAG-powered Q&A system over the FastAPI codebase and its documentation. Built 
 |---|---|---|
 | 1 | `ingestion/fetch_repo.py` — async GitHub issues fetcher | Done |
 | 1 | `ingestion/chunkers.py` — AST, heading, issue chunkers | Done |
-| 1 | `ingestion/embed_and_store.py` — embed → Chroma, BM25 pickle | Not started |
+| 1 | `ingestion/embed_and_store.py` — embed → Chroma, BM25 pickle | Done |
 | 2 | `retrieval/` — dense, sparse, hybrid RRF, reranker | Not started |
 | 3 | `query/` — HyDE rewriter, pipeline orchestrator | Not started |
 | 4 | `evaluator/` — retrieval evaluator, faithfulness check | Not started |
