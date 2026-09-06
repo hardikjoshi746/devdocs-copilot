@@ -9,6 +9,16 @@ from typing import Literal
 from dataclasses import dataclass, asdict
 import asyncio, httpx, os, json
 from pathlib import Path
+import subprocess
+
+def clone_repo(repo: str, dest: Path) -> Path:
+    if dest.exists():
+        print("idempotent — safe to re-run")
+        return dest
+    url = f'https://github.com/{repo}.git'
+    subprocess.run(["git", "clone", url, str(dest)], check=True) 
+    return dest
+
 
 
 # ---------------------------------------------------------------------------
