@@ -14,8 +14,9 @@ A RAG-powered Q&A system over the FastAPI codebase and its documentation. Built 
 | 1 | `ingestion/chunkers.py` — AST, heading, issue chunkers | Done |
 | 1 | `ingestion/embed_and_store.py` — embed → Chroma, BM25 pickle | Done |
 | 1 | `ingestion/run_ingestion.py` — end-to-end orchestration runner | Done |
-| 2 | `retrieval/dense.py` — Chroma vector search | In progress |
-| 2 | `retrieval/sparse.py`, `hybrid.py`, `reranker.py` | Not started |
+| 2 | `retrieval/dense.py` — Chroma vector search | Done |
+| 2 | `retrieval/sparse.py` — BM25 keyword search | In progress |
+| 2 | `retrieval/hybrid.py`, `reranker.py` | Not started |
 | 3 | `query/` — HyDE rewriter, pipeline orchestrator | Not started |
 | 4 | `evaluator/` — retrieval evaluator, faithfulness check | Not started |
 | 5 | `monitoring/` — tracer, logger, Phoenix setup | Not started |
