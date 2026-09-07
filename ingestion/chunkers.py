@@ -90,9 +90,19 @@ def chunk_markdown_file(source: str, filepath: str) -> list[Document]:
     documents = []
     lines = source.splitlines()
 
-    curr_heading = None 
+    curr_heading = None
     curr_lines = []
     inside_code = False
+    seen_ids: dict[str, int] = {}  # tracks how many times each id has appeared
+
+    def make_id(heading: str) -> str:
+        base = f"{filepath}::{heading}"
+        if base in seen_ids:
+            seen_ids[base] += 1
+            return f"{base}::{seen_ids[base]}"
+        seen_ids[base] = 0
+        return base
+
     for line in lines:
 
         if line.startswith("```"):
@@ -106,7 +116,7 @@ def chunk_markdown_file(source: str, filepath: str) -> list[Document]:
         if line.startswith("#"):
             if curr_heading is not None:
                 documents.append(Document(
-                    id=f"{filepath}::{curr_heading}",
+                    id=make_id(curr_heading),
                     content=curr_heading + "\n" + "\n".join(curr_lines),
                     type="doc",
                     source=filepath,
@@ -116,10 +126,10 @@ def chunk_markdown_file(source: str, filepath: str) -> list[Document]:
             curr_heading = line.lstrip("#").strip()
             curr_lines = []
         else:
-            curr_lines.append(line) 
+            curr_lines.append(line)
     if curr_heading is not None:
         documents.append(Document(
-                    id=f"{filepath}::{curr_heading}",
+                    id=make_id(curr_heading),
                     content=curr_heading + "\n" + "\n".join(curr_lines),
                     type="doc",
                     source=filepath,

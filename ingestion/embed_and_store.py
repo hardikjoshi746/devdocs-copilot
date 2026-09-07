@@ -41,9 +41,11 @@ async def embed_and_store(documents: list[Document]) -> None:
 
         # Single API call for the whole batch — returns one embedding per input.
         # text-embedding-3-small produces 1536-dimensional vectors.
+        # Truncate to 30000 chars (~8000 tokens) — OpenAI's max is 8192 tokens.
+        # Character-based truncation is imprecise but avoids adding tiktoken dependency.
         response = await client.embeddings.create(
             model="text-embedding-3-small",
-            input=[doc.content for doc in batch],
+            input=[doc.content[:30000] for doc in batch],
         )
 
         # response.data[i].embedding corresponds to batch[i] — order is preserved.
@@ -56,7 +58,14 @@ async def embed_and_store(documents: list[Document]) -> None:
             ids=[doc.id for doc in batch],
             documents=[doc.content for doc in batch],
             embeddings=vectors,
-            metadatas=[{**doc.metadata, "type": doc.type, "source": doc.source} for doc in batch],
+            metadatas=[
+                {
+                    **{k: ",".join(v) if isinstance(v, list) else v for k, v in doc.metadata.items()},
+                    "type": doc.type,
+                    "source": doc.source,
+                }
+                for doc in batch
+            ],
         )
 
     # BM25 — keyword-based sparse retrieval index.

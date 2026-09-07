@@ -30,7 +30,7 @@ async def main():
         docs += chunk_python_file(path.read_text(), str(path))
 
     # 4. Chunk Markdown file
-    for path in (REPO_DIR / "docs").rglob("*.md"):
+    for path in (REPO_DIR / "docs/en/docs").rglob("*.md"):
         docs += chunk_markdown_file(path.read_text(), str(path))
 
     # 5. Chunk issues
