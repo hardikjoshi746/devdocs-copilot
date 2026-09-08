@@ -24,7 +24,8 @@ A RAG-powered Q&A system over the FastAPI codebase and its documentation. Built 
 | 4 | `evaluator/faithfulness_check.py` — post-generation grounding check | Done |
 | 5 | `monitoring/` — tracer, logger, Phoenix setup | Not started |
 | 5 | `eval/` — dataset, metrics, ablations | Not started |
-| — | `api/main.py` — /query, /health, /metrics | Not started |
+| — | `api/main.py` — /query, /health | Done |
+| — | `generation/answer.py` — Claude Sonnet generation + citations | Done |
 | — | `infra/` — s3_sync.sh, deploy_ec2.sh | Not started |
 | — | `tests/` — chunkers, retrieval, evaluator, pipeline | Not started |
 
