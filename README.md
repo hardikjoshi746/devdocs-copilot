@@ -20,7 +20,8 @@ A RAG-powered Q&A system over the FastAPI codebase and its documentation. Built 
 | 2 | `retrieval/reranker.py` — cross-encoder reranking | Done |
 | 3 | `query/rewriter.py` — HyDE query rewriter | Done |
 | 3 | `query/pipeline.py` — full retrieval orchestrator | Done |
-| 4 | `evaluator/` — retrieval evaluator, faithfulness check | Not started |
+| 4 | `evaluator/retrieval_evaluator.py` — GOOD/EXPAND/ABSTAIN routing | Done |
+| 4 | `evaluator/faithfulness_check.py` — post-generation grounding check | Done |
 | 5 | `monitoring/` — tracer, logger, Phoenix setup | Not started |
 | 5 | `eval/` — dataset, metrics, ablations | Not started |
 | — | `api/main.py` — /query, /health, /metrics | Not started |
