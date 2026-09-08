@@ -1,80 +1,71 @@
 # DevDocs Copilot
 
-A RAG-powered Q&A system over the FastAPI codebase and its documentation. Built with backend rigor: clean API contracts, observable failure handling, and an ablation-driven eval framework. Deployed on AWS using free-tier services only.
+A production-minded RAG system that answers natural-language questions about the [FastAPI](https://github.com/tiangolo/fastapi) codebase. Ingests Python source, Markdown docs, and GitHub issues; retrieves with hybrid dense+sparse search; evaluates retrieval quality before generating; and refuses to answer when context is insufficient.
 
-**Target corpus:** [FastAPI](https://github.com/tiangolo/fastapi) — source code, docs, and GitHub issues.
+**Corpus:** FastAPI source code + docs + top 500 GitHub issues  
+**Stack:** OpenAI embeddings · Chroma · BM25 · Cross-encoder reranker · Claude Sonnet 4.6 (generation) · Claude Haiku 4.5 (evaluation)
 
 ---
 
-## Implementation Status
+## What Was Built
 
-| Phase | Component | Status |
+| Module | File(s) | Description |
 |---|---|---|
-| 1 | `ingestion/fetch_repo.py` — async GitHub issues fetcher + `clone_repo` | Done |
-| 1 | `ingestion/chunkers.py` — AST, heading, issue chunkers | Done |
-| 1 | `ingestion/embed_and_store.py` — embed → Chroma, BM25 pickle | Done |
-| 1 | `ingestion/run_ingestion.py` — end-to-end orchestration runner | Done |
-| 2 | `retrieval/dense.py` — Chroma vector search | Done |
-| 2 | `retrieval/sparse.py` — BM25 keyword search | Done |
-| 2 | `retrieval/hybrid.py` — RRF fusion | Done |
-| 2 | `retrieval/reranker.py` — cross-encoder reranking | Done |
-| 3 | `query/rewriter.py` — HyDE query rewriter | Done |
-| 3 | `query/pipeline.py` — full retrieval orchestrator | Done |
-| 4 | `evaluator/retrieval_evaluator.py` — GOOD/EXPAND/ABSTAIN routing | Done |
-| 4 | `evaluator/faithfulness_check.py` — post-generation grounding check | Done |
-| 5 | `monitoring/` — tracer, logger, Phoenix setup | Not started |
-| 5 | `eval/` — dataset, metrics, ablations | Done |
-| — | `api/main.py` — /query, /health | Done |
-| — | `generation/answer.py` — Claude Sonnet generation + citations | Done |
-| — | `infra/` — s3_sync.sh, deploy_ec2.sh | Not started |
-| — | `tests/` — chunkers, retrieval, api | Done |
+| Ingestion | `ingestion/fetch_repo.py` | Async GitHub issues fetcher + `clone_repo()` |
+| Ingestion | `ingestion/chunkers.py` | AST-based Python chunker, heading-aware Markdown chunker, issue chunker |
+| Ingestion | `ingestion/embed_and_store.py` | Batched embedding → Chroma; BM25 index serialized to pickle |
+| Ingestion | `ingestion/run_ingestion.py` | End-to-end orchestration runner |
+| Retrieval | `retrieval/dense.py` | Chroma cosine similarity search |
+| Retrieval | `retrieval/sparse.py` | BM25 keyword search |
+| Retrieval | `retrieval/hybrid.py` | Reciprocal Rank Fusion (RRF, k=60) over dense + sparse |
+| Retrieval | `retrieval/reranker.py` | Cross-encoder reranking: top-20 → top-5 |
+| Query | `query/rewriter.py` | HyDE query rewriter (generates fake answer → embed that) |
+| Query | `query/pipeline.py` | Full retrieval pipeline: HyDE → hybrid → rerank |
+| Evaluator | `evaluator/retrieval_evaluator.py` | Scores chunks, routes GOOD / EXPAND / ABSTAIN |
+| Evaluator | `evaluator/faithfulness_check.py` | Post-generation grounding check; strips ungrounded claims |
+| Generation | `generation/answer.py` | Claude Sonnet call with structured output + source citations |
+| Monitoring | `monitoring/tracer.py` | Per-step spans with latency; emits to Arize Phoenix (dev) or X-Ray (prod) |
+| Monitoring | `monitoring/logger.py` | Structured JSONL logs locally; CloudWatch Logs in production |
+| Eval | `eval/dataset.py` | 50 hand-written Q&A pairs with ground-truth source IDs |
+| Eval | `eval/metrics.py` | Recall@5, answer correctness, faithfulness, latency |
+| Eval | `eval/run_ablations.py` | Runs all system variants, outputs comparison table |
+| API | `api/main.py` | FastAPI service: `POST /query`, `GET /health` |
+| Tests | `tests/` | `test_chunkers.py`, `test_retrieval.py`, `test_api.py` |
+
+**Not built (deferred):** `infra/` — EC2 deploy script and S3 sync script.
 
 ---
 
-## Eval Results (Full System)
+## Eval Results
 
-Evaluated against 50 hand-written Q&A pairs across 4 categories.
+Evaluated against 50 hand-written Q&A pairs, stratified across 4 question types.
 
 ### Overall
 
 | Metric | Score | Target |
 |---|---|---|
-| Recall@5 | **0.98** | >0.85 |
-| Answer Correctness | **0.776** | >0.70 |
-| Faithfulness | **0.818** | >0.80 |
-| Latency p95 | **26s** | <30s |
-| ABSTAIN rate | **8%** | <15% |
+| Recall@5 | **0.98** | > 0.85 |
+| Answer Correctness | **0.776** | > 0.70 |
+| Faithfulness | **0.818** | > 0.80 |
+| Latency p95 | **26s** | < 30s |
+| ABSTAIN rate | **8%** | < 15% |
 
 ### Per Category
 
-| Category | Correctness | Faithfulness | N |
-|---|---|---|---|
-| Factual | 0.93 | 0.86 | 15 |
-| Conceptual | 0.88 | 0.94 | 15 |
-| Cross-source | 0.64 | 0.69 | 10 |
-| Debug | 0.52 | 0.70 | 10 |
+| Category | N | Recall@5 | Correctness | Faithfulness |
+|---|---|---|---|---|
+| Factual | 15 | 1.00 | 0.93 | 0.86 |
+| Conceptual | 15 | 1.00 | 0.88 | 0.94 |
+| Cross-source | 10 | 0.90 | 0.64 | 0.69 |
+| Debug | 10 | 1.00 | 0.52 | 0.70 |
 
-**Key findings:**
+**Findings:**
 - Retrieval is near-perfect (Recall@5 = 0.98) — HyDE + hybrid + reranking combination works
-- Factual and conceptual questions answered well (0.88–0.93 correctness)
-- Cross-source and debug categories are weaker — require synthesizing across docs + code + issues
+- Factual and conceptual questions answered well (correctness 0.88–0.93)
+- Cross-source and debug categories are weaker — require synthesizing across docs, source, and issues simultaneously
 - ABSTAIN rate dropped from 18% → 8% after tuning the retrieval evaluator prompt
 
----
-
-## What This Is (and Isn't)
-
-This is not a research prototype — it's a production-minded backend service that happens to use RAG. The AI techniques are chosen for measurable impact, not novelty. Every component has a failure mode documented, a metric tracking it, and a fallback when it goes wrong.
-
-**5 phases, fully executed:**
-
-| Phase | What | Why It's Here |
-|---|---|---|
-| 1 | Type-aware ingestion + chunking | Chunking quality is the highest-leverage decision in RAG |
-| 2 | Hybrid retrieval + cross-encoder reranking | Dense misses exact names; BM25 misses paraphrases |
-| 3 | Query rewriting (HyDE) | Closes vocabulary gap between questions and how answers are written |
-| 4 | Retrieval Evaluator with corrective routing | Prevents confident hallucinations; makes failure visible |
-| 5 | Observability + eval framework with ablations | You can't improve what you can't measure |
+Raw results are in `eval/ablation_results.json` and `eval/results_full.json`.
 
 ---
 
@@ -85,34 +76,39 @@ This is not a research prototype — it's a production-minded backend service th
                      │      REST API (FastAPI)   │
                      │  POST /query              │
                      │  GET  /health             │
-                     │  GET  /metrics            │
                      └────────────┬─────────────┘
                                   │
                      ┌────────────▼─────────────┐
                      │       Query Pipeline      │
                      │                           │
                      │  [1] HyDE Rewriter        │
+                     │       (Haiku 4.5)         │
                      │          │                │
                      │  [2] Hybrid Retriever     │
                      │    Dense + BM25 + RRF     │
                      │          │                │
-                     │  [3] Retrieval Evaluator  │◄── GOOD / EXPAND / ABSTAIN
-                     │          │                │
-                     │  [4] Cross-Encoder        │
+                     │  [3] Cross-Encoder        │
                      │      Reranker             │
+                     │       top-20 → top-5      │
+                     │          │                │
+                     │  [4] Retrieval Evaluator  │◄── GOOD / EXPAND / ABSTAIN
+                     │       (Haiku 4.5)         │
                      │          │                │
                      │  [5] Claude Generator     │
+                     │      (Sonnet 4.6)         │
                      │      + Citations          │
+                     │          │                │
+                     │  [6] Faithfulness Check   │
                      └────────────┬─────────────┘
                                   │
                 ┌─────────────────┴──────────────────┐
                 │                                     │
    ┌────────────▼────────────┐          ┌─────────────▼──────────┐
-   │   Local Dev (free)       │          │   AWS Production        │
+   │   Local Dev              │          │   AWS Production        │
    │                          │          │   (free tier)           │
    │   Arize Phoenix          │          │   CloudWatch Logs       │
    │   JSONL logs             │          │   AWS X-Ray             │
-   │   Chroma (local)         │          │   CloudWatch Metrics    │
+   │   Chroma (local disk)    │          │   CloudWatch Metrics    │
    │   BM25 pickle            │          │   S3 (corpus + index)   │
    └──────────────────────────┘          └────────────────────────┘
 ```
@@ -122,344 +118,152 @@ This is not a research prototype — it's a production-minded backend service th
 ```
 POST /query
 {
-  "question": str,
-  "filters": {
-    "content_type": "code" | "doc" | "issue" | null,
-    "top_k": int   // default 5
-  }
+  "question": str
 }
 
 → 200
 {
   "answer": str,
-  "citations": [{ "source": str, "chunk_id": str, "score": float }],
-  "retrieval_quality": "good" | "expanded" | "abstained",
-  "latency_ms": int,
-  "trace_id": str   // links to X-Ray trace in production
+  "citations": [{ "source": str, "chunk_id": str }],
+  "retrieval_quality": "GOOD" | "EXPAND" | "ABSTAIN"
 }
 
-→ 503  { "error": "retrieval_quality_too_low", "reason": str }
-→ 422  { "error": "invalid_request", "detail": str }
+→ 503  { "error": "retrieval_quality_too_low" }
 ```
 
-`retrieval_quality` is not cosmetic — it tells callers *why* an answer looks thin. `503` on ABSTAIN means clients handle "no context" as a first-class case, not a hallucinated answer.
+`retrieval_quality` is surfaced to callers so they know why an answer looks thin. `503` on ABSTAIN means low-confidence results are rejected rather than returned with hallucinated content.
 
-### Failure Modes and Handling
+### Retrieval Routing
+
+After scoring the top-5 chunks against the query:
+
+```
+avg score >= 0.7  →  GOOD:    proceed to generation
+avg score 0.4–0.7 →  EXPAND:  fetch parent chunks, broaden context, re-retrieve once
+avg score < 0.4   →  ABSTAIN: return 503, log full trace
+```
+
+### Failure Modes
 
 | Failure | Detection | Handling |
 |---|---|---|
 | Retrieved chunks irrelevant | Retrieval Evaluator score < 0.4 | ABSTAIN → 503, full trace logged |
-| Retrieved chunks borderline | Score 0.4–0.7 | EXPAND → broaden query, re-retrieve once |
-| LLM returns ungrounded claims | Faithfulness check post-generation | Strip claim or re-generate with stricter prompt |
-| Vector store unreachable | Health check on startup + per-request timeout | 503 with `dependency_unavailable` |
-| BM25 index stale | Checksum mismatch on load | Rebuild index, log CloudWatch alarm |
+| Retrieved chunks borderline | Score 0.4–0.7 | EXPAND → fetch parent chunks, retry once |
+| LLM returns ungrounded claims | Faithfulness check post-generation | Strip claim; return grounded answer only |
+| BM25 index stale | Checksum mismatch on load | Rebuild index |
 | Embedding API rate-limited | Exponential backoff, 3 retries | 429 → 503 after retries exhausted |
+
+---
+
+## Design Decisions
+
+### Type-aware chunking
+
+Three distinct chunkers for three content types:
+
+- **Python source** — AST-based (`ast.parse`), splits at function/class boundaries. Never cuts mid-function. Methods are child chunks of their parent class, enabling the EXPAND path to fetch the full class when a method chunk scores borderline.
+- **Markdown docs** — heading-boundary split, skips `#` inside fenced code blocks. Preserves section context.
+- **GitHub issues** — one Document per issue (title + body), enabling keyword search over real user bug reports.
+
+```python
+@dataclass
+class Document:
+    id: str            # filepath::ClassName::method — unique across corpus
+    content: str
+    type: Literal["code", "doc", "issue"]
+    source: str        # file path or issue URL
+    parent_id: str | None  # class chunk for method chunks; None otherwise
+    metadata: dict
+```
+
+### Hybrid retrieval + RRF
+
+Dense retrieval misses exact API names (`HTTPException`, `Depends`). BM25 catches those; dense catches paraphrases. RRF fuses both ranked lists using rank position only (ignoring incompatible raw scores):
+
+```
+RRF score = Σ  1 / (k + rank_i)    k=60
+```
+
+### HyDE query rewriting
+
+"How do I handle a 404?" is semantically distant from `raise HTTPException(status_code=404)`. HyDE generates a fake "ideal answer" using Haiku 4.5, embeds that instead of the question. The fake answer lives in the same vector space as real chunks — retrieval improves. The fake answer is discarded after retrieval; the original query is used for reranking and generation.
+
+### ABSTAIN over hallucination
+
+`503 retrieval_quality_too_low` is a recoverable, honest failure. A confident wrong answer with citations is not. The evaluator is a pre-generation gate; the faithfulness check is a post-generation filter. Both independent checks reduce ungrounded output.
+
+### Monitoring from the start
+
+`tracer.py` wraps every pipeline step. The `TRACER_BACKEND` env var switches between Arize Phoenix (local) and AWS X-Ray (production) with no code changes. Latency, token counts, and routing decisions are captured per span.
+
+---
+
+## Monitoring
+
+Every `/query` request emits per-step spans and a structured log entry.
+
+### Sample Trace (console)
+
+```
+[trace:35bf3ff1] START — What parameters does HTTPException accept?
+[35bf3ff1] rewrite          — 3554ms
+[35bf3ff1] hybrid_search    — 2332ms
+[35bf3ff1] rerank           — 4119ms
+[35bf3ff1] evaluate         —  849ms
+[35bf3ff1] generate         — 3571ms
+[35bf3ff1] check_faithfulness — 2106ms
+[trace:35bf3ff1] END
+```
+
+### Sample Log Entry (`logs/app.jsonl`)
+
+```json
+{"timestamp": "2026-09-08T20:42:47.518793+00:00", "trace_id": "7235958f", "event": "query_complete", "quality": "EXPAND", "question": "What parameters does HTTPException accept?"}
+```
+
+### Performance Optimizations Applied
+
+| Optimization | Impact |
+|---|---|
+| HyDE response cache (in-memory) | rewrite: 3500ms → 0ms on repeat queries |
+| Singleton API clients | Fixed connection exhaustion on long eval runs |
+| Cross-encoder lazy load | Moved to first call — eliminates import-time thread deadlock |
+| O(1) parent chunk index | EXPAND path lookup: O(n) scan → O(1) dict lookup |
 
 ---
 
 ## Data Storage & Flow
 
-### Local Directory Structure (`./data/`)
+### Local Directory Structure
 
 ```
 data/
 ├── raw/
-│   ├── repo/                  # git clone of FastAPI (source of truth for ingestion)
+│   ├── repo/                  # git clone of FastAPI
 │   │   ├── fastapi/           # Python source files
-│   │   └── docs/              # Markdown documentation
-│   └── issues.jsonl           # GitHub issues fetched via API (one JSON object per line)
+│   │   └── docs/en/docs/      # English Markdown docs
+│   └── issues.jsonl           # fetched GitHub issues (one JSON object per line)
 │
 ├── chunks/
-│   └── chunks.jsonl           # normalized Document objects after chunking (inspectable)
+│   └── chunks.jsonl           # normalized Document objects (inspectable, re-embeddable)
 │
 ├── chroma/                    # Chroma vector store persisted to disk
 │   ├── chroma.sqlite3
 │   └── <collection-uuid>/
 │
-└── bm25.pkl                   # BM25 index serialized as pickle
+└── bm25.pkl                   # BM25Okapi index serialized with pickle
 ```
 
-`data/raw/` is never uploaded to S3 — the repo can be re-cloned and issues re-fetched cheaply. Everything derived from it (chunks, Chroma, BM25) is what gets persisted and synced.
+`data/` is gitignored. `data/raw/` is never uploaded — the repo can be re-cloned and issues re-fetched. `chunks.jsonl`, `chroma/`, and `bm25.pkl` are the artifacts that need to be stored or synced.
 
-### S3 Structure
+### S3 Structure (target, not yet implemented)
 
 ```
 s3://{S3_BUCKET}/
-├── chunks/
-│   └── chunks.jsonl           # allows re-embedding without re-chunking
-├── chroma/
-│   └── chroma.tar.gz          # Chroma directory tarred for upload
-└── bm25.pkl                   # BM25 index
+├── chunks/chunks.jsonl        # allows re-embedding without re-chunking
+├── chroma/chroma.tar.gz       # Chroma directory tarred for upload
+└── bm25.pkl
 ```
-
-### Data Flow
-
-```
-  git clone + GitHub API
-          │
-          ▼
-  ./data/raw/            ← never uploaded (re-cloneable, ~200MB)
-          │
-    chunkers.py
-          │
-          ▼
-  ./data/chunks/         ← uploaded to S3 (re-embeddable without re-chunking)
-  chunks.jsonl
-          │
-    embed_and_store.py
-          │
-          ▼
-  ./data/chroma/         ─── push ──► s3://bucket/chroma/chroma.tar.gz
-  ./data/bm25.pkl        ─── push ──► s3://bucket/bm25.pkl
-          │
-          │ (EC2/Lambda cold start)
-          │
-          ◄── pull ────── S3 (if ./data/chroma/ is empty on boot)
-          │
-    API startup (loads Chroma + BM25 into memory)
-```
-
-### When Each Path Is Used
-
-| Scenario | Data Path |
-|---|---|
-| First-time ingestion | `git clone` → chunk → embed → save to `./data/` → push to S3 |
-| Re-embed only (model change) | Pull `chunks.jsonl` from S3 → re-embed → push new Chroma + BM25 |
-| Re-chunk + re-embed (chunker change) | Re-clone repo → full ingestion → push everything to S3 |
-| EC2/Lambda cold start | Pull `chroma.tar.gz` + `bm25.pkl` from S3 → load into memory |
-| Local dev | `./data/` only — S3 not involved unless `SYNC_TO_S3=true` |
-
-### `infra/s3_sync.sh` — the glue
-
-```bash
-# Push processed artifacts to S3 after ingestion
-bash infra/s3_sync.sh push
-
-# Pull artifacts from S3 on instance boot (skips if ./data/ already populated)
-bash infra/s3_sync.sh pull
-
-# Force pull (overwrite local with S3 — use after re-ingestion on another machine)
-bash infra/s3_sync.sh pull --force
-```
-
----
-
-## Implementation Plan
-
-### Phase 1 — Ingestion + Type-Aware Chunking
-
-**Goal:** Pull the FastAPI corpus, chunk it at semantically meaningful boundaries, persist to S3.
-
-**Document schema:**
-```python
-@dataclass
-class Document:
-    id: str
-    content: str
-    type: Literal["code", "doc", "issue"]
-    source: str            # file path or issue URL
-    parent_id: str | None  # containing chunk (e.g. full class for a method)
-    metadata: dict         # function_name, class_name, heading_path, issue_state
-```
-
-**Chunking strategy by type:**
-
-| Content Type | Strategy | Size |
-|---|---|---|
-| Python source | AST-based: split at function/class boundaries | 50–200 lines |
-| Markdown docs | Heading-aware recursive split | ~400 tokens |
-| GitHub issues | Title + body together; split long bodies at paragraphs | ~300 tokens |
-| Docstrings | Extracted and merged into parent function chunk | merged |
-
-`parent_id` enables **parent-child retrieval**: if a child chunk scores borderline in the retrieval evaluator, fetch its parent for richer context before deciding to discard.
-
-**Sources:**
-- FastAPI repo: `git clone` into `./data/raw/repo/` → walk `fastapi/` and `docs/` with `pathlib`
-- GitHub issues: GitHub REST API, paginated, top 500 by activity → `./data/raw/issues.jsonl`
-
-**Persistence:** see [Data Storage & Flow](#data-storage--flow) above. Short version:
-- `./data/` is the local working directory (gitignored)
-- `chunks.jsonl`, `chroma/`, and `bm25.pkl` are pushed to S3 after ingestion
-- EC2/Lambda pulls from S3 on cold start if `./data/` is empty
-
-### Phase 2 — Hybrid Retrieval + Reranking
-
-**Two retrieval signals, fused:**
-
-```
-Dense:  cosine_similarity(embed(query), embed(chunk))  → ranked list A
-Sparse: BM25(tokenize(query), tokenize(chunk))         → ranked list B
-
-RRF score = Σ  1 / (k + rank_i)    k=60
-Merged:  sort by RRF score → top-20
-```
-
-**Dense:** `text-embedding-3-small` via OpenAI, stored in Chroma.
-**Sparse:** `rank_bm25` over tokenized chunks, rebuilt on ingestion.
-
-Dense misses exact API names (`HTTPException`, `Depends`). BM25 catches these; dense catches paraphrase. Together they cover each other's blind spots.
-
-**Reranking:** `cross-encoder/ms-marco-MiniLM-L-6-v2` scores `(query, chunk)` pairs jointly — far more accurate than bi-encoder similarity but too slow for full corpus (~100ms/pair). Applied only to the top-20 shortlist → top-5.
-
-### Phase 3 — Query Rewriting (HyDE)
-
-**Problem:** "How do I handle a 404?" is semantically distant from `raise HTTPException(status_code=404)`.
-
-**HyDE:** Generate a fake "ideal answer" → embed that → use for retrieval. The fake answer lives in the same vector space as real chunks.
-
-```
-User query → LLM → "fake answer" → embed → dense retrieval
-                                    ↑
-                          same vector space as real chunks
-```
-
-**When it runs:** Queries classified as non-trivial (short, vague, no known API names). Exact-match queries skip HyDE.
-
-**Fallback:** If HyDE times out (>2s) → fall back to raw query embedding. Never block retrieval on a rewrite step.
-
-### Phase 4 — Retrieval Evaluator
-
-**Problem:** Top-5 after reranking might still be irrelevant. Bad context → confident hallucination.
-
-**Scoring** (via `claude-haiku-4-5` — fast, cheap per chunk):
-
-```python
-@dataclass
-class ChunkScore:
-    chunk_id: str
-    relevance: float       # 0–1: does this chunk address the question?
-    supports_answer: bool  # is the answer likely in here?
-
-context_quality = mean(relevance_scores) * coverage_factor
-```
-
-**Routing:**
-```
->= 0.7  →  GOOD:    proceed to LLM
-0.4–0.7 →  EXPAND:  fetch parent chunks, broaden query, re-retrieve once
-< 0.4   →  ABSTAIN: return 503, log full trace to CloudWatch
-```
-
-**Post-generation faithfulness check:** After generation, verify each claim maps to a retrieved chunk. Ungrounded sentences → strip or re-generate. Second independent check on the same property.
-
-### Phase 5 — Observability + Eval
-
-#### Observability: Dev vs Production
-
-**Local dev — Arize Phoenix (free, local):**
-- Visual trace explorer at `localhost:6006`
-- Retrieval relevance distributions, per-query trace timeline
-- Zero cost, zero setup beyond `pip install arize-phoenix`
-
-**Production — AWS (all within free tier):**
-
-| Signal | AWS Service | Free Tier Limit |
-|---|---|---|
-| Structured logs (per-span JSONL) | CloudWatch Logs | 5 GB ingestion/month |
-| Distributed traces | AWS X-Ray | 100K traces recorded/month |
-| Metrics + dashboards | CloudWatch Metrics | 3 dashboards, 10 alarms |
-| Corpus + index storage | S3 | 5 GB storage |
-| API keys / config | SSM Parameter Store | Free (standard params) |
-
-**Span schema** (same structure for both Phoenix locally and X-Ray in production):
-```python
-{
-  "trace_id": str,
-  "query_id": str,
-  "step": "rewrite" | "retrieval" | "rerank" | "eval" | "generate" | "faithfulness",
-  "latency_ms": int,
-  "input_tokens": int | None,
-  "output_tokens": int | None,
-  "metadata": dict   # step-specific: scores, route taken, k, etc.
-}
-```
-
-**Key signals to watch:**
-
-| Signal | What It Tells You |
-|---|---|
-| GOOD / EXPAND / ABSTAIN % | Is the corpus covering user questions? |
-| EXPAND → success rate | Is re-retrieval actually helping? |
-| Stage latency p50/p95 | Where is the bottleneck? |
-| HyDE trigger rate | Is the rewriter being used appropriately? |
-| Faithfulness fail rate | Is generation drifting from context? |
-| Token cost per query | Budget: ~$0.003–0.01/query at typical lengths |
-
-#### Eval Framework
-
-**Dataset:** 50 hand-written Q&A pairs, stratified:
-
-| Category | N | Sample |
-|---|---|---|
-| Factual | 15 | "What status code does `HTTPException` use by default?" |
-| Conceptual | 15 | "How does dependency injection work in FastAPI?" |
-| Cross-source | 10 | "What do the docs say about `BackgroundTasks` and are there open issues?" |
-| Debug/code | 10 | "Why would a `sync` route block the event loop?" |
-
-**Metrics:**
-
-| Metric | Method | Target |
-|---|---|---|
-| Recall@5 | Correct source in top-5? | >0.85 |
-| Answer Correctness | LLM-as-judge (0–5) vs. reference | >3.5 avg |
-| Faithfulness | % claims grounded in retrieved context | >0.90 |
-| Retrieval Eval Accuracy | Did evaluator correctly call GOOD vs. POOR? | >0.80 |
-| End-to-end latency | p95 | <8s |
-
-**Ablation table:**
-
-| Variant | Recall@5 | Correctness | Faithfulness | Latency p95 |
-|---|---|---|---|---|
-| Baseline: dense only, no HyDE | — | — | — | — |
-| + Sparse (hybrid RRF) | — | — | — | — |
-| + Reranker | — | — | — | — |
-| + HyDE query rewriting | — | — | — | — |
-| Full system (evaluated) | **0.98** | **0.776** | **0.818** | **26s** |
-
-_Baseline variants not yet run — full ablation table pending._
-
-Each row isolates one variable. Numbers either justify the technique or cut it.
-
----
-
-## AWS Architecture
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│                        AWS (free tier)                        │
-│                                                              │
-│  ┌──────────────┐    ┌───────────────┐    ┌───────────────┐  │
-│  │  API Gateway  │───►│ Lambda / EC2  │───►│      S3       │  │
-│  │  (optional)   │    │  (FastAPI app) │    │ corpus, index │  │
-│  └──────────────┘    └───────┬───────┘    └───────────────┘  │
-│                              │                               │
-│              ┌───────────────┼───────────────┐               │
-│              ▼               ▼               ▼               │
-│     ┌────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│     │  CloudWatch │  │   AWS X-Ray  │  │ SSM Parameter│      │
-│     │  Logs +     │  │  (traces)    │  │ Store (keys) │      │
-│     │  Metrics    │  └──────────────┘  └──────────────┘      │
-│     └────────────┘                                           │
-└──────────────────────────────────────────────────────────────┘
-```
-
-**Deployment options (both free tier):**
-- **EC2 t2.micro** — 750 hrs/month free (12 months). Run FastAPI with `uvicorn`. Best for always-on dev testing.
-- **Lambda** — 1M requests/month free forever. Package app with `mangum` adapter. Best for low-traffic production.
-
-**Cost breakdown at learning-scale usage:**
-
-| Service | Usage | Cost |
-|---|---|---|
-| EC2 t2.micro | Always on | $0 (free tier) |
-| S3 | ~200MB corpus + index | $0 (free tier) |
-| CloudWatch Logs | ~100MB/month traces | $0 (free tier) |
-| X-Ray | ~10K traces/month | $0 (free tier) |
-| OpenAI embeddings | ~500K tokens ingestion | ~$0.01 one-time |
-| Anthropic API | ~1K queries during eval | ~$1–3 total |
-| **Total** | | **< $5 for the whole project** |
-
-> **What to avoid:** OpenSearch Serverless (~$700/month minimum), Bedrock (per-token cost with no free tier advantage over direct Anthropic API), RDS (unnecessary for this use case).
 
 ---
 
@@ -467,164 +271,142 @@ Each row isolates one variable. Numbers either justify the technique or cut it.
 
 ```
 adRag/
-├── README.md
-├── LEARNING.md
 ├── pyproject.toml
+├── pytest.ini
 ├── .env.example
-├── Dockerfile
-├── .gitignore                  # data/ and .env are gitignored
-│
-├── data/                       # gitignored — populated by ingestion or S3 pull
-│   ├── raw/
-│   │   ├── repo/               # git clone of FastAPI
-│   │   └── issues.jsonl        # fetched GitHub issues
-│   ├── chunks/
-│   │   └── chunks.jsonl        # normalized Document objects
-│   ├── chroma/                 # Chroma vector store
-│   └── bm25.pkl                # BM25 index
-│
-├── infra/
-│   ├── deploy_ec2.sh           # bootstrap script for EC2 t2.micro
-│   └── s3_sync.sh              # push/pull data/ ↔ S3
+├── .gitignore                  # data/ and .env gitignored
 │
 ├── ingestion/
-│   ├── fetch_repo.py           # clone repo, fetch GitHub issues via API
+│   ├── fetch_repo.py           # clone repo; fetch GitHub issues via REST API
 │   ├── chunkers.py             # AST chunker, heading chunker, issue chunker
-│   └── embed_and_store.py      # embed → Chroma; tokenize → BM25 pickle; sync to S3
+│   ├── embed_and_store.py      # batch embed → Chroma; tokenize → BM25 pickle
+│   └── run_ingestion.py        # orchestration: clone → chunk → embed → store
 │
 ├── retrieval/
 │   ├── dense.py                # Chroma similarity search
-│   ├── sparse.py               # BM25 search
-│   ├── hybrid.py               # RRF fusion
-│   └── reranker.py             # cross-encoder top-20 → top-5
+│   ├── sparse.py               # BM25 search (sync, CPU-only)
+│   ├── hybrid.py               # RRF fusion of dense + sparse
+│   └── reranker.py             # cross-encoder: top-20 → top-5
 │
 ├── query/
-│   ├── rewriter.py             # HyDE + fallback to raw query
-│   └── pipeline.py             # orchestrates all steps, emits traces
+│   ├── rewriter.py             # HyDE rewriter (Haiku 4.5)
+│   └── pipeline.py             # HyDE → hybrid search → rerank
 │
 ├── evaluator/
-│   ├── retrieval_evaluator.py  # score chunks, route GOOD/EXPAND/ABSTAIN
-│   └── faithfulness_check.py   # post-generation grounding check
+│   ├── retrieval_evaluator.py  # score chunks, route GOOD / EXPAND / ABSTAIN
+│   └── faithfulness_check.py   # post-generation grounding filter
 │
 ├── generation/
-│   └── answer.py               # Claude call, structured output, citations
+│   └── answer.py               # Claude Sonnet call; structured output + citations
 │
 ├── monitoring/
-│   ├── tracer.py               # wraps every step; emits to Phoenix (dev) or X-Ray (prod)
-│   ├── logger.py               # JSONL locally; CloudWatch Logs in production
-│   └── phoenix_setup.py        # Arize Phoenix local config (dev only)
+│   ├── tracer.py               # per-step spans; Phoenix (dev) or X-Ray (prod)
+│   └── logger.py               # JSONL locally; CloudWatch Logs in production
 │
 ├── eval/
-│   ├── dataset.py              # Q&A pairs + ground truth source IDs
-│   ├── metrics.py              # recall, correctness, faithfulness, latency
-│   └── run_ablations.py        # runs all variants, outputs comparison table
+│   ├── dataset.py              # 50 Q&A pairs with ground-truth source IDs
+│   ├── dataset_with_ids.json   # dataset serialized with chunk IDs
+│   ├── metrics.py              # recall@5, correctness, faithfulness, latency
+│   ├── run_ablations.py        # runs all variants, writes comparison JSON
+│   ├── ablation_results.json   # full ablation output
+│   └── results_full.json       # per-question detailed results
 │
 ├── api/
-│   └── main.py                 # FastAPI service: /query, /health, /metrics
+│   └── main.py                 # FastAPI: POST /query, GET /health
 │
-└── tests/
-    ├── test_chunkers.py
-    ├── test_retrieval.py
-    ├── test_evaluator.py
-    └── test_pipeline.py
+├── tests/
+│   ├── conftest.py
+│   ├── test_chunkers.py
+│   ├── test_retrieval.py
+│   └── test_api.py
+│
+└── logs/
+    └── app.jsonl               # runtime structured logs
 ```
 
 ---
 
 ## Tech Stack
 
-| Layer | Dev | Production (AWS) | Cost |
-|---|---|---|---|
-| Vector store | Chroma (local) | Chroma (on EC2/Lambda, index from S3) | Free |
-| Sparse retrieval | `rank_bm25` pickle | Same, loaded from S3 | Free |
-| Embeddings | `text-embedding-3-small` | Same | ~$0.01 total |
-| Reranker | `cross-encoder/ms-marco-MiniLM-L-6-v2` | Same | Free |
-| LLM | `claude-sonnet-4-6` (Anthropic API) | Same | ~$1–3 total |
-| Retrieval eval | `claude-haiku-4-5` | Same | Minimal |
-| Traces | Arize Phoenix (local) | AWS X-Ray | Free tier |
-| Logs | JSONL file | CloudWatch Logs | Free tier |
-| Metrics | Phoenix UI | CloudWatch Metrics + Dashboard | Free tier |
-| Storage | Local disk | S3 | Free tier |
-| API runtime | `uvicorn` local | EC2 t2.micro or Lambda | Free tier |
-| Secrets | `.env` file | SSM Parameter Store | Free |
-
----
-
-## Key Design Decisions
-
-### Dev locally, observe on AWS
-
-Use free local tools (Chroma, Arize Phoenix) during development. The tracer abstraction (`tracer.py`) switches backends via an env var — `TRACER_BACKEND=phoenix` locally, `TRACER_BACKEND=xray` in production. No code changes needed.
-
-### No Bedrock, no OpenSearch
-
-Bedrock charges per token with no free tier advantage over the Anthropic API used directly. OpenSearch Serverless has a minimum cost of ~$700/month. Both are excluded. For a learning project, Chroma + Anthropic API is the right call.
-
-### ABSTAIN is a first-class response, not an error
-
-503 with `retrieval_quality_too_low` is recoverable. A hallucinated answer with citations is not. The API contract treats low-confidence results as distinct from success.
-
-### Ablation table is the actual deliverable
-
-Filling it with real numbers — and cutting a technique if the numbers don't justify it — is the point. "HyDE improved Recall@5 by 8 points" beats "I implemented HyDE."
-
-### Monitoring from day 1
-
-`tracer.py` wraps every step before any other code is written. Retrofitting observability means your traces don't cover the early failures that were hardest to debug.
-
----
-
-## Future Work
-
-Deferred intentionally — understood and designed, out of scope for this version.
-
-**Self-RAG:** LLM emits reflection tokens mid-generation to decide when to retrieve rather than retrieving once upfront. Real uplift on multi-step questions; requires significant prompt engineering beyond current scope.
-
-**Graph RAG:** Knowledge graph of entities (functions, classes, issues) traversed at query time for multi-hop questions that vector search can't handle. Right approach once the vector-only baseline is solid.
-
-**Fine-tuned embeddings:** Train on `(query, positive chunk, hard negative)` pairs mined from real retrieval failures. Do this *after* the eval baseline exists — fine-tune on real failures, not hypothetical ones.
-
-**Streaming eval / drift detection:** Canary eval on every ingestion batch to catch quality regressions before users do. Important for a live system; deferred until offline eval is airtight.
+| Layer | Tool | Notes |
+|---|---|---|
+| Embeddings | `text-embedding-3-small` (OpenAI) | 1536-dim vectors; ~$0.01 total for ingestion |
+| Vector store | Chroma (persistent, local) | `PersistentClient` auto-saves; idempotent on re-run |
+| Sparse retrieval | `rank_bm25` | Tokenized by `.lower().split()`; serialized with pickle |
+| Reranker | `cross-encoder/ms-marco-MiniLM-L-6-v2` | Free, local, ~80MB; applied to top-20 only |
+| LLM — generation | `claude-sonnet-4-6` | Structured output with source citations |
+| LLM — evaluation | `claude-haiku-4-5-20251001` | Per-chunk relevance scoring + faithfulness check |
+| Traces (dev) | Arize Phoenix | Local UI at `localhost:6006` |
+| Traces (prod) | AWS X-Ray | 100K traces/month free tier |
+| Logs | JSONL locally / CloudWatch Logs | 5 GB ingestion/month free tier |
+| API | FastAPI + uvicorn | |
+| Python | 3.11+ | |
 
 ---
 
 ## Getting Started
 
 ```bash
-# 1. Install
+# 1. Install dependencies
 pip install -e ".[dev]"
 
 # 2. Configure
 cp .env.example .env
-# OPENAI_API_KEY, ANTHROPIC_API_KEY, GITHUB_TOKEN
-# TRACER_BACKEND=phoenix   # or xray in production
-# AWS_REGION, S3_BUCKET    # only needed for production
+# Set: OPENAI_API_KEY, ANTHROPIC_API_KEY, GITHUB_TOKEN
+# Optional: TRACER_BACKEND=phoenix  (default; use xray in production)
 
-# 3. Start local observability
-python -m monitoring.phoenix_setup    # http://localhost:6006
-
-# 4. Ingest (clones repo, chunks, embeds, stores)
+# 3. Ingest (clones FastAPI repo, chunks, embeds, stores — ~10 min first run)
 python -m ingestion.run_ingestion
 
-# 5. Run the API locally
+# 4. Run the API
 uvicorn api.main:app --reload
 
-# 6. Query
+# 5. Query
 curl -X POST http://localhost:8000/query \
   -H "Content-Type: application/json" \
   -d '{"question": "How does FastAPI handle dependency injection?"}'
 
-# 7. Run eval + ablations
+# 6. Run eval suite
 python -m eval.run_ablations
 
-# --- AWS deployment ---
-# 8. Sync corpus to S3
-bash infra/s3_sync.sh push
-
-# 9. Deploy to EC2 t2.micro
-bash infra/deploy_ec2.sh
-
-# 10. View production traces
-# AWS Console → X-Ray → Traces
-# AWS Console → CloudWatch → Dashboards
+# 7. Run tests
+pytest tests/
 ```
+
+### Environment Variables
+
+| Variable | Required | Description |
+|---|---|---|
+| `OPENAI_API_KEY` | Yes | Used for `text-embedding-3-small` |
+| `ANTHROPIC_API_KEY` | Yes | Used for generation and evaluation |
+| `GITHUB_TOKEN` | Yes | Used by `fetch_repo.py` to pull issues |
+| `TRACER_BACKEND` | No | `phoenix` (default) or `xray` |
+| `AWS_REGION` | Prod only | For X-Ray and CloudWatch |
+| `S3_BUCKET` | Prod only | For corpus + index storage |
+
+---
+
+## Cost
+
+Total cost to build and evaluate this project at dev/learning scale:
+
+| Item | Cost |
+|---|---|
+| OpenAI embeddings (~500K tokens ingestion) | ~$0.01 one-time |
+| Anthropic API (~1K queries during eval runs) | ~$1–3 total |
+| All infrastructure (EC2, S3, CloudWatch, X-Ray — free tier) | $0 |
+| **Total** | **< $5** |
+
+---
+
+## Future Work
+
+**Multi-language support** — TypeScript/JavaScript chunker (tree-sitter based). Current AST chunker is Python-only (`ast.parse`).
+
+**UI** — Simple HTML/JS frontend served by FastAPI at `/`. Text input, response display, retrieval quality badge.
+
+**AWS deployment** — `infra/s3_sync.sh` (push/pull data artifacts) and `infra/deploy_ec2.sh` (bootstrap EC2 t2.micro). Both are designed but not yet written.
+
+**Self-RAG** — LLM emits reflection tokens mid-generation to decide when to retrieve rather than retrieving once upfront. Real uplift on multi-step questions; deferred.
+
+**Fine-tuned embeddings** — Train on `(query, positive chunk, hard negative)` triples mined from real retrieval failures. Do this after the eval baseline is solid, not before.
