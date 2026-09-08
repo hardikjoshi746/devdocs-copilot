@@ -24,6 +24,10 @@ from anthropic import AsyncAnthropic
 import os
 import asyncio
 import re
+from dotenv import load_dotenv
+
+load_dotenv()
+_client = AsyncAnthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 
 
 async def _score_doc(client: AsyncAnthropic, query: str, doc: Document) -> float:
@@ -35,7 +39,10 @@ async def _score_doc(client: AsyncAnthropic, query: str, doc: Document) -> float
     being told to reply with only a number.
     """
     prompt = (
-        f"Rate how relevant this chunk is for answering the query. "
+        f"Does this chunk contain information that would help answer the query? "
+        f"Score 1.0 if the chunk directly answers or contains key facts needed. "
+        f"Score 0.5 if the chunk is related but only partially useful. "
+        f"Score 0.0 if the chunk is unrelated. "
         f"Reply with ONLY a number between 0 and 1.\n\n"
         f"Query: {query}\n\nChunk: {doc.content}"
     )
@@ -57,10 +64,8 @@ async def evaluate(query: str, docs: list[Document]) -> str:
     All chunk scores are fetched in parallel via asyncio.gather —
     5 API calls take the same time as 1 instead of 5x sequential latency.
     """
-    client = AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-
     # Fire all scoring calls concurrently — chunks are independent of each other
-    scores = await asyncio.gather(*[_score_doc(client, query, doc) for doc in docs])
+    scores = await asyncio.gather(*[_score_doc(_client, query, doc) for doc in docs])
 
     avg = sum(scores) / len(scores)
 

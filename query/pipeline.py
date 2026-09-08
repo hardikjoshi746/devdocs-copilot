@@ -18,10 +18,11 @@ BM25 keyword matching works better with the original terse query.
 from ingestion.chunkers import Document
 from query.rewriter import rewrite
 from retrieval.hybrid import hybrid_search
-from retrieval.reranker import rerank
+from retrieval.reranker import rerank_async
+from monitoring.tracer import span
 
 
-async def pipeline(query: str) -> list[Document]:
+async def pipeline(query: str, trace_id: str = None) -> list[Document]:
     """
     Run the full retrieval pipeline and return top-5 most relevant chunks.
 
@@ -33,13 +34,16 @@ async def pipeline(query: str) -> list[Document]:
     """
     # Step 1: HyDE — generate a fake answer to use as the retrieval query
     # The fake answer uses FastAPI vocabulary, so it embeds closer to real chunks
-    hyde_response = await rewrite(query=query)
+    with span(trace_id, "rewrite"):
+        hyde_response = await rewrite(query=query)
 
     # Step 2: Hybrid search — dense + BM25 + RRF fusion → top 20 candidates
-    response = await hybrid_search(query=hyde_response)
+    with span(trace_id, "hybrid_search"):
+        response = await hybrid_search(query=hyde_response)
 
     # Step 3: Rerank — cross-encoder scores all 20 (query, chunk) pairs jointly → top 5
     # Uses original query here so reranker judges relevance to what user actually asked
-    result = rerank(query=query, docs=response)
+    with span(trace_id, "rerank_async"):
+        result = await rerank_async(query=query, docs=response)
 
     return result

@@ -19,7 +19,11 @@ Max 300 tokens — we only need a short answer to get good embeddings, not a ful
 
 from anthropic import AsyncAnthropic
 import os
+from dotenv import load_dotenv
 
+load_dotenv()
+_client = AsyncAnthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+_cache: dict[str, str] = {}
 
 async def rewrite(query: str) -> str:
     """
@@ -29,11 +33,13 @@ async def rewrite(query: str) -> str:
     and find similar chunks in Chroma. The original query is still used
     for BM25 sparse search (exact keyword matching).
     """
-    client = AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    if query in _cache:
+        return _cache[query]
     prompt = f"Write a short technical answer to this question as if answering from FastAPI documentation: {query}"
-    response = await client.messages.create(
+    response = await _client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=300,
         messages=[{"role": "user", "content": prompt}]
     )
-    return response.content[0].text
+    _cache[query] = response.content[0].text
+    return _cache[query]

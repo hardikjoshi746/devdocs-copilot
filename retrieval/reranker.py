@@ -16,32 +16,49 @@ Model: cross-encoder/ms-marco-MiniLM-L-6-v2
 - ~80MB, downloaded once and cached by HuggingFace
 """
 
+import asyncio
+from functools import partial
 from sentence_transformers import CrossEncoder
 from ingestion.chunkers import Document
+
+# Model is lazy-loaded on first call — ~80MB, takes a few seconds
+# The import above is at module level (main thread) to avoid thread-safety issues
+_model = None
+
+def _get_model() -> CrossEncoder:
+    global _model
+    if _model is None:
+        _model = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+    return _model
+
+
+def _rerank_sync(query: str, docs: list[Document], top_n: int) -> list[Document]:
+    """Synchronous reranking — runs in a thread pool to avoid blocking event loop."""
+    if not docs:
+        return []
+    model = _get_model()
+    # Truncate content to 2000 chars — cross-encoder tokenizer caps at 512 tokens anyway
+    pairs = [[query, doc.content[:2000]] for doc in docs]
+    scores = model.predict(pairs)
+    ranked = sorted(zip(scores, docs), key=lambda x: x[0], reverse=True)
+    return [doc for _, doc in ranked[:top_n]]
 
 
 def rerank(query: str, docs: list[Document], top_n: int = 5) -> list[Document]:
     """
     Re-score docs against the query using a cross-encoder and return top-n.
 
-    No async needed — runs locally on CPU, no network calls after first download.
-
-    Args:
-        query: the user's question
-        docs:  candidate chunks from hybrid_search (typically top-20)
-        top_n: how many to return after reranking (typically 5)
+    Runs synchronously — call from sync code or use rerank_async from async code.
     """
-    model = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+    return _rerank_sync(query, docs, top_n)
 
-    # Build (query, chunk) pairs — the cross-encoder reads both together
-    # to judge relevance more accurately than cosine similarity alone
-    pairs = [[query, doc.content] for doc in docs]
 
-    # predict() scores all pairs in one batch — faster than calling one by one
-    # returns a numpy array of floats, one score per pair
-    scores = model.predict(pairs)
+async def rerank_async(query: str, docs: list[Document], top_n: int = 5) -> list[Document]:
+    """
+    Async wrapper — runs the CPU-heavy cross-encoder in a thread pool
+    so it doesn't block the event loop.
 
-    # zip pairs each score with its Document, sort by score descending,
-    # then unpack just the Documents
-    ranked = sorted(zip(scores, docs), key=lambda x: x[0], reverse=True)
-    return [doc for _, doc in ranked[:top_n]]
+    Use this from async contexts (pipeline, run_ablations).
+    """
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, partial(_rerank_sync, query, docs, top_n))

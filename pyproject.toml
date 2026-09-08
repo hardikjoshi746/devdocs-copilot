@@ -54,3 +54,9 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]   # pycodestyle, pyflakes, isort
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest-asyncio>=1.4.0",
+]

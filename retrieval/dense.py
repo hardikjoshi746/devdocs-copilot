@@ -14,7 +14,11 @@ Why dense retrieval?
 from ingestion.chunkers import Document
 import chromadb
 import os
+from dotenv import load_dotenv
 from openai import AsyncOpenAI
+
+load_dotenv()
+_openai_client = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 
 async def dense_search(query: str, n_results: int = 10) -> list[Document]:
@@ -24,11 +28,9 @@ async def dense_search(query: str, n_results: int = 10) -> list[Document]:
     Must use the same embedding model as ingestion (text-embedding-3-small) —
     if models differ, vectors live in different spaces and similarity is meaningless.
     """
-    client = AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"])
-
     # Embed the query as a single string — input is a list because the API
     # supports batching, but we only need one embedding here.
-    response = await client.embeddings.create(
+    response = await _openai_client.embeddings.create(
         model="text-embedding-3-small",
         input=[query]
     )

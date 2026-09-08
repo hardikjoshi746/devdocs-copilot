@@ -1,0 +1,652 @@
+[
+  {
+    "id": "f01",
+    "category": "factual",
+    "question": "What parameters does HTTPException accept?",
+    "expected_answer": "HTTPException accepts status_code (required), detail (optional, any data), and headers (optional dict).",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/tutorial/handling-errors.md::The resulting response { #the-resulting-response }",
+      "data/raw/repo/docs/en/docs/tutorial/handling-errors.md::Raise an `HTTPException` in your code { #raise-an-httpexception-in-your-code }",
+      "data/raw/repo/fastapi/exceptions.py::HTTPException",
+      "data/raw/repo/fastapi/exception_handlers.py::http_exception_handler",
+      "data/raw/repo/docs/en/docs/reference/exceptions.md::Exceptions - `HTTPException` and `WebSocketException`"
+    ]
+  },
+  {
+    "id": "f02",
+    "category": "factual",
+    "question": "What is the default response class in FastAPI?",
+    "expected_answer": "The default response class in FastAPI is JSONResponse.",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/advanced/custom-response.md::Default response class { #default-response-class }",
+      "data/raw/repo/docs/en/docs/advanced/custom-response.md::JSON Responses { #json-responses }",
+      "data/raw/repo/docs/en/docs/advanced/custom-response.md::Custom Response - HTML, Stream, File, others { #custom-response-html-stream-file-others }",
+      "data/raw/repo/docs/en/docs/reference/responses.md::Custom Response Classes - File, HTML, Redirect, Streaming, etc.",
+      "data/raw/repo/docs/en/docs/advanced/custom-response.md::HTML Response { #html-response }"
+    ]
+  },
+  {
+    "id": "f03",
+    "category": "factual",
+    "question": "How do you declare a path parameter in FastAPI?",
+    "expected_answer": "Declare a path parameter by including it in the path string with curly braces and as a function argument: @app.get('/items/{item_id}') def read_item(item_id: int).",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/tutorial/body.md::Request body + path + query parameters { #request-body-path-query-parameters }",
+      "data/raw/repo/docs/en/docs/tutorial/query-params.md::Multiple path and query parameters { #multiple-path-and-query-parameters }",
+      "data/raw/repo/docs/en/docs/tutorial/path-params.md::Path Parameters { #path-parameters }",
+      "data/raw/repo/docs/en/docs/tutorial/path-params.md::Path parameters with types { #path-parameters-with-types }",
+      "data/raw/repo/docs/en/docs/tutorial/path-params-numeric-validations.md::Order the parameters as you need { #order-the-parameters-as-you-need }"
+    ]
+  },
+  {
+    "id": "f04",
+    "category": "factual",
+    "question": "What decorator is used to define a POST endpoint in FastAPI?",
+    "expected_answer": "@app.post('/path') is used to define a POST endpoint.",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/tutorial/first-steps.md::Define a *path operation decorator* { #define-a-path-operation-decorator }",
+      "data/raw/repo/docs/en/docs/tutorial/first-steps.md::Recap { #recap }",
+      "data/raw/repo/fastapi/routing.py::APIRouter::websocket",
+      "data/raw/repo/fastapi/applications.py::FastAPI::middleware",
+      "data/raw/repo/fastapi/applications.py::FastAPI::exception_handler"
+    ]
+  },
+  {
+    "id": "f05",
+    "category": "factual",
+    "question": "How do you make a query parameter optional in FastAPI?",
+    "expected_answer": "Make a query parameter optional by setting a default value, typically None: def read_items(q: str | None = None).",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/tutorial/query-params.md::Optional parameters { #optional-parameters }",
+      "data/raw/repo/docs/en/docs/tutorial/query-params-str-validations.md::Alternative (old): `Query` as the default value { #alternative-old-query-as-the-default-value }",
+      "data/raw/repo/fastapi/security/api_key.py::APIKeyQuery",
+      "data/raw/repo/docs/en/docs/tutorial/query-params.md::Required query parameters { #required-query-parameters }",
+      "data/raw/repo/docs/en/docs/tutorial/query-params-str-validations.md::Query Parameters and String Validations { #query-parameters-and-string-validations }"
+    ]
+  },
+  {
+    "id": "f06",
+    "category": "factual",
+    "question": "What is the purpose of the Depends function in FastAPI?",
+    "expected_answer": "Depends is used to declare dependencies \u2014 functions that FastAPI will call and inject as arguments into your path operation functions.",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/reference/dependencies.md::`Depends()`",
+      "data/raw/repo/fastapi/param_functions.py::Depends",
+      "data/raw/repo/docs/en/docs/tutorial/dependencies/index.md::What is \"Dependency Injection\" { #what-is-dependency-injection }",
+      "data/raw/repo/docs/en/docs/tutorial/dependencies/index.md::Declare the dependency, in the \"dependant\" { #declare-the-dependency-in-the-dependant }",
+      "data/raw/repo/docs/en/docs/features.md::Dependency Injection { #dependency-injection }"
+    ]
+  },
+  {
+    "id": "f07",
+    "category": "factual",
+    "question": "How do you define a request body in FastAPI?",
+    "expected_answer": "Define a request body by creating a Pydantic BaseModel subclass and declaring it as a parameter in the path operation function.",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/tutorial/body.md::Request Body { #request-body }",
+      "data/raw/repo/docs/en/docs/tutorial/body.md::Request body + path parameters { #request-body-path-parameters }",
+      "data/raw/repo/docs/en/docs/tutorial/body.md::Request body + path + query parameters { #request-body-path-query-parameters }",
+      "data/raw/repo/docs/en/docs/tutorial/body-multiple-params.md::Recap { #recap }",
+      "data/raw/repo/docs/en/docs/tutorial/body-multiple-params.md::Multiple body parameters { #multiple-body-parameters }"
+    ]
+  },
+  {
+    "id": "f08",
+    "category": "factual",
+    "question": "What HTTP status code does a successful POST typically return in FastAPI?",
+    "expected_answer": "By default FastAPI returns 200, but for POST you can set status_code=201 using the status_code parameter in the decorator.",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/advanced/additional-status-codes.md::Additional status codes { #additional-status-codes_1 }",
+      "data/raw/repo/docs/en/docs/how-to/authentication-error-status-code.md::Use Old 403 Authentication Error Status Codes { #use-old-403-authentication-error-status-codes }",
+      "data/raw/repo/docs/en/docs/tutorial/response-status-code.md::Response Status Code { #response-status-code }",
+      "data/raw/repo/fastapi/applications.py::FastAPI::post",
+      "data/raw/repo/docs/en/docs/advanced/additional-status-codes.md::Additional Status Codes { #additional-status-codes }"
+    ]
+  },
+  {
+    "id": "f09",
+    "category": "factual",
+    "question": "How do you add tags to a FastAPI route?",
+    "expected_answer": "Add tags using the tags parameter in the route decorator: @app.get('/items', tags=['items']).",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/tutorial/path-operation-configuration.md::Tags { #tags }",
+      "data/raw/repo/docs/en/docs/advanced/generate-clients.md::FastAPI App with Tags { #fastapi-app-with-tags }",
+      "data/raw/repo/docs/en/docs/how-to/general.md::Documentation Tags - OpenAPI { #documentation-tags-openapi }",
+      "data/raw/repo/docs/en/docs/tutorial/metadata.md::Metadata for tags { #metadata-for-tags }",
+      "data/raw/repo/docs/en/docs/tutorial/bigger-applications.md::Add some custom `tags`, `responses`, and `dependencies` { #add-some-custom-tags-responses-and-dependencies }"
+    ]
+  },
+  {
+    "id": "f10",
+    "category": "factual",
+    "question": "What is BackgroundTasks in FastAPI?",
+    "expected_answer": "BackgroundTasks allows you to run functions in the background after returning a response to the client.",
+    "expected_source_ids": [
+      "data/raw/repo/fastapi/background.py::BackgroundTasks",
+      "data/raw/repo/docs/en/docs/reference/background.md::Background Tasks - `BackgroundTasks`",
+      "data/raw/repo/docs/en/docs/tutorial/background-tasks.md::Technical Details { #technical-details }",
+      "data/raw/repo/docs/en/docs/tutorial/background-tasks.md::Using `BackgroundTasks` { #using-backgroundtasks }",
+      "data/raw/repo/docs/en/docs/tutorial/background-tasks.md::Dependency Injection { #dependency-injection }"
+    ]
+  },
+  {
+    "id": "f11",
+    "category": "factual",
+    "question": "How do you set cookies in a FastAPI response?",
+    "expected_answer": "Set cookies using response.set_cookie(key, value) where response is a Response parameter injected into the path operation.",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/advanced/response-cookies.md::Use a `Response` parameter { #use-a-response-parameter }",
+      "data/raw/repo/docs/en/docs/advanced/response-headers.md::Use a `Response` parameter { #use-a-response-parameter }",
+      "data/raw/repo/docs/en/docs/advanced/response-cookies.md::More info { #more-info }",
+      "data/raw/repo/fastapi/security/api_key.py::APIKeyCookie",
+      "data/raw/repo/docs/en/docs/tutorial/cookie-param-models.md::Cookies with a Pydantic Model { #cookies-with-a-pydantic-model }"
+    ]
+  },
+  {
+    "id": "f12",
+    "category": "factual",
+    "question": "What is the purpose of response_model in FastAPI?",
+    "expected_answer": "response_model filters and validates the response data, ensuring only the declared fields are returned and sensitive fields are excluded.",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/tutorial/response-model.md::`response_model` Priority { #response-model-priority }",
+      "data/raw/repo/docs/en/docs/advanced/response-directly.md::How a Response Model Works { #how-a-response-model-works }",
+      "data/raw/repo/docs/en/docs/tutorial/response-model.md::Response Model - Return Type { #response-model-return-type }",
+      "data/raw/repo/docs/en/docs/advanced/additional-responses.md::Additional Response with `model` { #additional-response-with-model }",
+      "data/raw/repo/docs/en/docs/release-notes.md::Features::37"
+    ]
+  },
+  {
+    "id": "f13",
+    "category": "factual",
+    "question": "How do you declare a header parameter in FastAPI?",
+    "expected_answer": "Declare a header parameter using Header: from fastapi import Header, then def read_items(user_agent: str | None = Header(default=None)).",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/tutorial/header-params.md::Declare `Header` parameters { #declare-header-parameters }",
+      "data/raw/repo/docs/en/docs/tutorial/header-param-models.md::Header Parameters with a Pydantic Model { #header-parameters-with-a-pydantic-model }",
+      "data/raw/repo/docs/en/docs/tutorial/header-params.md::Recap { #recap }",
+      "data/raw/repo/docs/en/docs/tutorial/header-param-models.md::Summary { #summary }",
+      "data/raw/repo/docs/en/docs/release-notes.md::`Header` Parameter Models"
+    ]
+  },
+  {
+    "id": "f14",
+    "category": "factual",
+    "question": "What is APIRouter used for in FastAPI?",
+    "expected_answer": "APIRouter is used to organize routes into separate modules/files, which are then included in the main app with app.include_router().",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/tutorial/bigger-applications.md::*Path operations* with `APIRouter` { #path-operations-with-apirouter }",
+      "data/raw/repo/docs/en/docs/tutorial/bigger-applications.md::`APIRouter` { #apirouter }",
+      "data/raw/repo/docs/en/docs/reference/apirouter.md::`APIRouter` class",
+      "data/raw/repo/fastapi/routing.py::APIRouter::include_router",
+      "data/raw/repo/docs/en/docs/release-notes.md::Features::58"
+    ]
+  },
+  {
+    "id": "f15",
+    "category": "factual",
+    "question": "How do you return a custom HTTP status code in FastAPI?",
+    "expected_answer": "Set the status_code parameter in the route decorator: @app.post('/items', status_code=201), or return a Response object with the desired status code.",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/advanced/additional-status-codes.md::Additional status codes { #additional-status-codes_1 }",
+      "data/raw/repo/docs/en/docs/advanced/additional-status-codes.md::Additional Status Codes { #additional-status-codes }",
+      "data/raw/repo/docs/en/docs/tutorial/response-status-code.md::Response Status Code { #response-status-code }",
+      "data/raw/repo/docs/en/docs/how-to/authentication-error-status-code.md::Use Old 403 Authentication Error Status Codes { #use-old-403-authentication-error-status-codes }",
+      "data/raw/repo/docs/en/docs/reference/status.md::Status Codes"
+    ]
+  },
+  {
+    "id": "c01",
+    "category": "conceptual",
+    "question": "How does dependency injection work in FastAPI?",
+    "expected_answer": "FastAPI's dependency injection system calls functions declared with Depends() automatically, passing their return values to path operation functions. Dependencies can have their own dependencies, forming a dependency tree.",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/tutorial/dependencies/index.md::What is \"Dependency Injection\" { #what-is-dependency-injection }",
+      "data/raw/repo/docs/en/docs/features.md::Dependency Injection { #dependency-injection }",
+      "data/raw/repo/docs/en/docs/tutorial/dependencies/index.md::Dependencies { #dependencies }",
+      "data/raw/repo/fastapi/param_functions.py::Depends",
+      "data/raw/repo/docs/en/docs/tutorial/dependencies/index.md::Declare the dependency, in the \"dependant\" { #declare-the-dependency-in-the-dependant }"
+    ]
+  },
+  {
+    "id": "c02",
+    "category": "conceptual",
+    "question": "Why does FastAPI use Pydantic for data validation?",
+    "expected_answer": "Pydantic provides automatic data validation, serialization, and JSON schema generation. FastAPI uses it to validate request bodies, query parameters, and response models with Python type hints.",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/alternatives.md::[Pydantic](https://pydantic.dev/docs/) { #pydantic }",
+      "data/raw/repo/docs/en/docs/advanced/dataclasses.md::Using Dataclasses { #using-dataclasses }",
+      "data/raw/repo/docs/en/docs/tutorial/response-model.md::FastAPI Data Filtering { #fastapi-data-filtering }",
+      "data/raw/repo/docs/en/docs/features.md::Pydantic features { #pydantic-features }",
+      "data/raw/repo/docs/en/docs/tutorial/path-params.md::Pydantic { #pydantic }"
+    ]
+  },
+  {
+    "id": "c03",
+    "category": "conceptual",
+    "question": "What is the difference between async and sync path operations in FastAPI?",
+    "expected_answer": "Async path operations (async def) run in the event loop and should be used with async I/O. Sync path operations (def) are run in a thread pool to avoid blocking the event loop.",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/tutorial/stream-json-lines.md::Non-async *path operation functions* { #non-async-path-operation-functions }",
+      "data/raw/repo/docs/en/docs/tutorial/server-sent-events.md::Non-async *path operation functions* { #non-async-path-operation-functions }",
+      "data/raw/repo/docs/en/docs/async.md::Path operation functions { #path-operation-functions }",
+      "data/raw/repo/docs/en/docs/tutorial/dependencies/index.md::To `async` or not to `async` { #to-async-or-not-to-async }",
+      "data/raw/repo/docs/en/docs/async.md::More technical details { #more-technical-details }"
+    ]
+  },
+  {
+    "id": "c04",
+    "category": "conceptual",
+    "question": "How does FastAPI generate OpenAPI documentation automatically?",
+    "expected_answer": "FastAPI inspects type hints, Pydantic models, and route decorators to generate an OpenAPI schema. This schema powers the automatic Swagger UI at /docs and ReDoc at /redoc.",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/alternatives.md::[Swagger](https://swagger.io/) / [OpenAPI](https://github.com/OAI/OpenAPI-Specification/) { #swagger-openapi }",
+      "data/raw/repo/docs/en/docs/tutorial/first-steps.md::OpenAPI { #openapi }",
+      "data/raw/repo/docs/en/docs/python-types.md::Type hints in **FastAPI** { #type-hints-in-fastapi }",
+      "data/raw/repo/docs/en/docs/tutorial/path-params.md::Documentation { #documentation }",
+      "data/raw/repo/fastapi/applications.py::FastAPI::include_router"
+    ]
+  },
+  {
+    "id": "c05",
+    "category": "conceptual",
+    "question": "What is the lifespan event in FastAPI and when would you use it?",
+    "expected_answer": "The lifespan context manager handles startup and shutdown events. Use it to initialize resources (database connections, ML models) on startup and clean them up on shutdown.",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/advanced/events.md::Alternative Events (deprecated) { #alternative-events-deprecated }",
+      "data/raw/repo/docs/en/docs/advanced/events.md::Lifespan { #lifespan }",
+      "data/raw/repo/docs/en/docs/release-notes.md::Features::36",
+      "data/raw/repo/docs/en/docs/advanced/testing-events.md::Testing Events: lifespan and startup - shutdown { #testing-events-lifespan-and-startup-shutdown }",
+      "data/raw/repo/docs/en/docs/advanced/events.md::Async Context Manager { #async-context-manager }"
+    ]
+  },
+  {
+    "id": "c06",
+    "category": "conceptual",
+    "question": "How does FastAPI handle request validation errors?",
+    "expected_answer": "FastAPI automatically returns a 422 Unprocessable Entity response with details about validation errors when request data doesn't match the declared types or constraints.",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/tutorial/handling-errors.md::Override request validation exceptions { #override-request-validation-exceptions }",
+      "data/raw/repo/docs/en/docs/tutorial/handling-errors.md::Override the `HTTPException` error handler { #override-the-httpexception-error-handler }",
+      "data/raw/repo/docs/en/docs/tutorial/handling-errors.md::Override the default exception handlers { #override-the-default-exception-handlers }",
+      "data/raw/repo/fastapi/applications.py::FastAPI::exception_handler",
+      "data/raw/repo/fastapi/security/api_key.py::APIKeyCookie"
+    ]
+  },
+  {
+    "id": "c07",
+    "category": "conceptual",
+    "question": "What is the difference between Path, Query, and Body parameters in FastAPI?",
+    "expected_answer": "Path parameters are part of the URL path, Query parameters are in the URL query string, and Body parameters come from the request body. FastAPI infers which is which from the function signature and type hints.",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/tutorial/body.md::Request body + path + query parameters { #request-body-path-query-parameters }",
+      "data/raw/repo/docs/en/docs/tutorial/body-multiple-params.md::Mix `Path`, `Query` and body parameters { #mix-path-query-and-body-parameters }",
+      "data/raw/repo/docs/en/docs/reference/parameters.md::Request Parameters",
+      "data/raw/repo/docs/en/docs/tutorial/body.md::Request body + path parameters { #request-body-path-parameters }",
+      "data/raw/repo/docs/en/docs/tutorial/body-multiple-params.md::Multiple body parameters { #multiple-body-parameters }"
+    ]
+  },
+  {
+    "id": "c08",
+    "category": "conceptual",
+    "question": "How does FastAPI handle CORS?",
+    "expected_answer": "FastAPI handles CORS via CORSMiddleware from starlette. Add it with app.add_middleware(CORSMiddleware, allow_origins=[...], allow_methods=[...]).",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/tutorial/cors.md::Use `CORSMiddleware` { #use-corsmiddleware }",
+      "data/raw/repo/docs/en/docs/tutorial/cors.md::More info { #more-info }",
+      "data/raw/repo/docs/en/docs/reference/middleware.md::Middleware",
+      "data/raw/repo/docs/en/docs/tutorial/middleware.md::Create a middleware { #create-a-middleware }",
+      "data/raw/repo/docs/en/docs/advanced/middleware.md::Adding ASGI middlewares { #adding-asgi-middlewares }"
+    ]
+  },
+  {
+    "id": "c09",
+    "category": "conceptual",
+    "question": "What is middleware in FastAPI and how does it work?",
+    "expected_answer": "Middleware is code that runs before and after every request. It wraps the entire application, allowing you to modify requests/responses, add headers, log requests, or handle authentication globally.",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/tutorial/middleware.md::Middleware { #middleware }",
+      "data/raw/repo/docs/en/docs/advanced/middleware.md::Adding ASGI middlewares { #adding-asgi-middlewares }",
+      "data/raw/repo/docs/en/docs/advanced/middleware.md::Integrated middlewares { #integrated-middlewares }",
+      "data/raw/repo/docs/en/docs/reference/middleware.md::Middleware",
+      "data/raw/repo/docs/en/docs/tutorial/middleware.md::Create a middleware { #create-a-middleware }"
+    ]
+  },
+  {
+    "id": "c10",
+    "category": "conceptual",
+    "question": "How does FastAPI handle file uploads?",
+    "expected_answer": "FastAPI handles file uploads using UploadFile and File from fastapi. Declare the parameter as: async def upload(file: UploadFile = File(...)). The file content is accessible via await file.read().",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/reference/uploadfile.md::`UploadFile` class",
+      "data/raw/repo/docs/en/docs/tutorial/request-files.md::Multiple File Uploads { #multiple-file-uploads }",
+      "data/raw/repo/fastapi/datastructures.py::UploadFile",
+      "data/raw/repo/docs/en/docs/release-notes.md::0.7.0 (2019-03-03)",
+      "data/raw/repo/docs/en/docs/tutorial/request-files.md::Import `File` { #import-file }"
+    ]
+  },
+  {
+    "id": "c11",
+    "category": "conceptual",
+    "question": "What is the purpose of yield in FastAPI dependencies?",
+    "expected_answer": "Using yield in a dependency allows setup code before yield and teardown code after. FastAPI runs teardown after the response is sent, making it ideal for database sessions and resource cleanup.",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/tutorial/dependencies/dependencies-with-yield.md::Dependencies with yield { #dependencies-with-yield }",
+      "data/raw/repo/docs/en/docs/advanced/advanced-dependencies.md::Dependencies with `yield` and `scope` { #dependencies-with-yield-and-scope }",
+      "data/raw/repo/docs/en/docs/tutorial/dependencies/dependencies-with-yield.md::Sub-dependencies with `yield` { #sub-dependencies-with-yield }",
+      "data/raw/repo/docs/en/docs/release-notes.md::Dependencies with `yield`, `HTTPException` and Background Tasks",
+      "data/raw/repo/docs/en/docs/advanced/advanced-dependencies.md::Dependencies with `yield` and `StreamingResponse`, Technical Details { #dependencies-with-yield-and-streamingresponse-technical-details }"
+    ]
+  },
+  {
+    "id": "c12",
+    "category": "conceptual",
+    "question": "How does FastAPI support WebSockets?",
+    "expected_answer": "FastAPI supports WebSockets via the WebSocket class. Declare a route with @app.websocket('/ws') and accept connections with await websocket.accept(). Send/receive with send_text() and receive_text().",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/reference/websockets.md::WebSockets",
+      "data/raw/repo/docs/en/docs/release-notes.md::Features::59",
+      "data/raw/repo/docs/en/docs/advanced/websockets.md::Create a `websocket` { #create-a-websocket }",
+      "data/raw/repo/docs/en/docs/advanced/websockets.md::WebSockets { #websockets }",
+      "issue::16160"
+    ]
+  },
+  {
+    "id": "c13",
+    "category": "conceptual",
+    "question": "What is the difference between include_router and mounting a sub-application in FastAPI?",
+    "expected_answer": "include_router adds routes from an APIRouter to the main app, sharing middleware and exception handlers. Mounting a sub-application creates a separate ASGI app with its own middleware stack.",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/advanced/sub-applications.md::Mounting a **FastAPI** application { #mounting-a-fastapi-application }",
+      "data/raw/repo/docs/en/docs/tutorial/static-files.md::What is \"Mounting\" { #what-is-mounting }",
+      "data/raw/repo/docs/en/docs/advanced/behind-a-proxy.md::Mounting a sub-application { #mounting-a-sub-application }",
+      "data/raw/repo/docs/en/docs/advanced/sub-applications.md::Sub Applications - Mounts { #sub-applications-mounts }",
+      "data/raw/repo/docs/en/docs/tutorial/bigger-applications.md::Include the `APIRouter`s for `users` and `items` { #include-the-apirouters-for-users-and-items }"
+    ]
+  },
+  {
+    "id": "c14",
+    "category": "conceptual",
+    "question": "How does FastAPI handle authentication?",
+    "expected_answer": "FastAPI provides security utilities like OAuth2PasswordBearer, HTTPBasic, and APIKey. These are used as dependencies that extract and validate credentials from requests.",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/tutorial/security/first-steps.md::Security - First Steps { #security-first-steps }",
+      "data/raw/repo/docs/en/docs/tutorial/security/index.md::OpenAPI { #openapi }",
+      "data/raw/repo/fastapi/security/api_key.py::APIKeyHeader",
+      "data/raw/repo/fastapi/security/api_key.py::APIKeyCookie",
+      "data/raw/repo/fastapi/security/api_key.py::APIKeyQuery"
+    ]
+  },
+  {
+    "id": "c15",
+    "category": "conceptual",
+    "question": "What is the role of Starlette in FastAPI?",
+    "expected_answer": "FastAPI is built on top of Starlette, which provides the ASGI framework, routing, middleware, WebSocket support, and request/response handling. FastAPI adds type hints, Pydantic validation, and OpenAPI generation on top.",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/alternatives.md::[Starlette](https://starlette.dev/) { #starlette }",
+      "data/raw/repo/docs/en/docs/features.md::Starlette features { #starlette-features }",
+      "data/raw/repo/docs/en/docs/benchmarks.md::Benchmarks and speed { #benchmarks-and-speed }",
+      "data/raw/repo/docs/en/docs/index.md::Requirements { #requirements }",
+      "data/raw/repo/docs/en/docs/advanced/middleware.md::Adding ASGI middlewares { #adding-asgi-middlewares }"
+    ]
+  },
+  {
+    "id": "x01",
+    "category": "cross-source",
+    "question": "How is HTTPException defined in the FastAPI source code?",
+    "expected_answer": "HTTPException is defined in fastapi/exceptions.py. It inherits from Starlette's HTTPException and adds support for custom headers.",
+    "expected_source_ids": [
+      "data/raw/repo/fastapi/exceptions.py::HTTPException",
+      "data/raw/repo/docs/en/docs/tutorial/handling-errors.md::FastAPI's `HTTPException` vs Starlette's `HTTPException` { #fastapis-httpexception-vs-starlettes-httpexception }",
+      "data/raw/repo/docs/en/docs/reference/exceptions.md::Exceptions - `HTTPException` and `WebSocketException`",
+      "data/raw/repo/fastapi/exceptions.py::HTTPException::__init__",
+      "data/raw/repo/fastapi/exceptions.py::WebSocketException"
+    ]
+  },
+  {
+    "id": "x02",
+    "category": "cross-source",
+    "question": "What does the FastAPI source say about how Depends is resolved?",
+    "expected_answer": "Depends is resolved by the dependency injection system in FastAPI's routing layer. The dependant object stores the dependency tree and FastAPI calls each dependency in order.",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/reference/dependencies.md::`Depends()`",
+      "data/raw/repo/fastapi/param_functions.py::Depends",
+      "data/raw/repo/docs/en/docs/tutorial/dependencies/sub-dependencies.md::Sub-dependencies { #sub-dependencies }",
+      "data/raw/repo/docs/en/docs/tutorial/dependencies/index.md::Declare the dependency, in the \"dependant\" { #declare-the-dependency-in-the-dependant }",
+      "data/raw/repo/docs/en/docs/tutorial/dependencies/classes-as-dependencies.md::Classes as dependencies { #classes-as-dependencies_1 }"
+    ]
+  },
+  {
+    "id": "x03",
+    "category": "cross-source",
+    "question": "How does BackgroundTasks work according to both the docs and source code?",
+    "expected_answer": "BackgroundTasks collects functions to run after the response is sent. In the source, it's implemented using Starlette's BackgroundTasks which runs tasks after the response completes.",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/tutorial/background-tasks.md::Dependency Injection { #dependency-injection }",
+      "data/raw/repo/docs/en/docs/tutorial/background-tasks.md::Technical Details { #technical-details }",
+      "data/raw/repo/docs/en/docs/tutorial/background-tasks.md::Using `BackgroundTasks` { #using-backgroundtasks }",
+      "data/raw/repo/fastapi/background.py::BackgroundTasks",
+      "data/raw/repo/docs/en/docs/reference/background.md::Background Tasks - `BackgroundTasks`"
+    ]
+  },
+  {
+    "id": "x04",
+    "category": "cross-source",
+    "question": "What are the known issues or limitations with FastAPI's dependency injection?",
+    "expected_answer": "Known issues include difficulties with async generators in some contexts, and challenges with testing dependencies. Some issues relate to dependency caching behavior.",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/features.md::Dependency Injection { #dependency-injection }",
+      "data/raw/repo/docs/en/docs/tutorial/dependencies/index.md::Dependencies { #dependencies }",
+      "data/raw/repo/docs/en/docs/tutorial/dependencies/index.md::**FastAPI** compatibility { #fastapi-compatibility }",
+      "data/raw/repo/docs/en/docs/alternatives.md::[Molten](https://moltenframework.com/) { #molten }",
+      "data/raw/repo/docs/en/docs/tutorial/dependencies/dependencies-with-yield.md::Sub-dependencies with `yield` { #sub-dependencies-with-yield }"
+    ]
+  },
+  {
+    "id": "x05",
+    "category": "cross-source",
+    "question": "How does FastAPI's routing work internally?",
+    "expected_answer": "FastAPI routing extends Starlette's Router. Routes are stored as APIRoute objects that wrap path operations with validation, serialization, and dependency injection logic.",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/features.md::Starlette features { #starlette-features }",
+      "data/raw/repo/docs/en/docs/editor-support.md::Features { #features }",
+      "data/raw/repo/docs/en/docs/tutorial/first-steps.md::Step 1: import `FastAPI` { #step-1-import-fastapi }",
+      "issue::15969",
+      "data/raw/repo/docs/en/docs/project-generation.md::Full Stack FastAPI Template - Technology Stack and Features { #full-stack-fastapi-template-technology-stack-and-features }"
+    ]
+  },
+  {
+    "id": "x06",
+    "category": "cross-source",
+    "question": "What is the FastAPI application class and what does it inherit from?",
+    "expected_answer": "The FastAPI class is defined in fastapi/applications.py and inherits from Starlette. It adds OpenAPI schema generation, automatic documentation, and enhanced routing.",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/tutorial/first-steps.md::Step 1: import `FastAPI` { #step-1-import-fastapi }",
+      "data/raw/repo/docs/en/docs/reference/fastapi.md::`FastAPI` class",
+      "data/raw/repo/docs/en/docs/tutorial/bigger-applications.md::The main `FastAPI` { #the-main-fastapi }",
+      "data/raw/repo/docs/en/docs/alternatives.md::[Starlette](https://starlette.dev/) { #starlette }",
+      "data/raw/repo/docs/en/docs/deployment/manually.md::ASGI Servers { #asgi-servers }"
+    ]
+  },
+  {
+    "id": "x07",
+    "category": "cross-source",
+    "question": "How are response models validated in FastAPI source code?",
+    "expected_answer": "Response models are validated using Pydantic's model_validate in the response serialization step. FastAPI's routing layer calls serialize_response() which applies the response_model filter.",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/tutorial/response-model.md::`response_model` Priority { #response-model-priority }",
+      "data/raw/repo/docs/en/docs/advanced/response-directly.md::How a Response Model Works { #how-a-response-model-works }",
+      "data/raw/repo/docs/en/docs/release-notes.md::Breaking Changes - Fixes",
+      "data/raw/repo/docs/en/docs/advanced/additional-responses.md::Additional Response with `model` { #additional-response-with-model }",
+      "data/raw/repo/docs/en/docs/release-notes.md::Features::37"
+    ]
+  },
+  {
+    "id": "x08",
+    "category": "cross-source",
+    "question": "What does FastAPI do when a path operation raises an unhandled exception?",
+    "expected_answer": "Unhandled exceptions propagate to Starlette's exception handler middleware, which returns a 500 Internal Server Error. Custom exception handlers can be registered with app.add_exception_handler().",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/advanced/advanced-dependencies.md::Dependencies with `yield` and `except`, Technical Details { #dependencies-with-yield-and-except-technical-details }",
+      "data/raw/repo/docs/en/docs/tutorial/handling-errors.md::Install custom exception handlers { #install-custom-exception-handlers }",
+      "data/raw/repo/docs/en/docs/tutorial/handling-errors.md::Override request validation exceptions { #override-request-validation-exceptions }",
+      "data/raw/repo/docs/en/docs/tutorial/handling-errors.md::Override the default exception handlers { #override-the-default-exception-handlers }",
+      "data/raw/repo/docs/en/docs/tutorial/dependencies/dependencies-with-yield.md::Dependencies with `yield` and `except` { #dependencies-with-yield-and-except }"
+    ]
+  },
+  {
+    "id": "x09",
+    "category": "cross-source",
+    "question": "How does FastAPI generate JSON schemas from Pydantic models?",
+    "expected_answer": "FastAPI calls Pydantic's model_json_schema() to generate JSON Schema from BaseModel subclasses. These schemas are included in the OpenAPI spec for request/response documentation.",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/advanced/path-operation-advanced-configuration.md::Custom OpenAPI content type { #custom-openapi-content-type }",
+      "data/raw/repo/docs/en/docs/tutorial/schema-extra-example.md::Pydantic and FastAPI `examples` { #pydantic-and-fastapi-examples }",
+      "data/raw/repo/docs/en/docs/tutorial/first-steps.md::Check the `openapi.json` { #check-the-openapi-json }",
+      "data/raw/repo/docs/en/docs/alternatives.md::[Pydantic](https://pydantic.dev/docs/) { #pydantic }",
+      "data/raw/repo/docs/en/docs/tutorial/body.md::Results { #results }"
+    ]
+  },
+  {
+    "id": "x10",
+    "category": "cross-source",
+    "question": "What is the FastAPI TestClient and how is it implemented?",
+    "expected_answer": "TestClient is re-exported from Starlette and uses httpx under the hood to make synchronous HTTP requests to the ASGI app without running a real server.",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/reference/testclient.md::Test Client - `TestClient`",
+      "data/raw/repo/docs/en/docs/tutorial/testing.md::Testing { #testing }",
+      "data/raw/repo/docs/en/docs/advanced/async-tests.md::HTTPX { #httpx }",
+      "data/raw/repo/docs/en/docs/tutorial/testing.md::Using `TestClient` { #using-testclient }",
+      "data/raw/repo/docs/en/docs/advanced/async-tests.md::Async Tests { #async-tests }"
+    ]
+  },
+  {
+    "id": "d01",
+    "category": "debug",
+    "question": "Why would a sync route block the event loop in FastAPI?",
+    "expected_answer": "A sync route (def, not async def) runs in a thread pool by default. However, if you use async def but call blocking I/O without await, it blocks the event loop and prevents other requests from being processed.",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/advanced/stream-data.md::Files and Async { #files-and-async }",
+      "data/raw/repo/docs/en/docs/tutorial/server-sent-events.md::Non-async *path operation functions* { #non-async-path-operation-functions }",
+      "data/raw/repo/docs/en/docs/tutorial/stream-json-lines.md::Non-async *path operation functions* { #non-async-path-operation-functions }",
+      "issue::15974",
+      "data/raw/repo/docs/en/docs/advanced/async-tests.md::Other Asynchronous Function Calls { #other-asynchronous-function-calls }"
+    ]
+  },
+  {
+    "id": "d02",
+    "category": "debug",
+    "question": "How do I fix a 422 Unprocessable Entity error in FastAPI?",
+    "expected_answer": "A 422 error means request validation failed. Check that the request body, query params, or path params match the declared types. The error response body contains details about which fields failed and why.",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/release-notes.md::Breaking Changes - Fixes",
+      "data/raw/repo/docs/en/docs/release-notes.md::Fixes::27",
+      "data/raw/repo/docs/en/docs/release-notes.md::Fixes::40",
+      "issue::16138",
+      "data/raw/repo/docs/en/docs/release-notes.md::Fixes::52"
+    ]
+  },
+  {
+    "id": "d03",
+    "category": "debug",
+    "question": "Why am I getting a 'field required' validation error in FastAPI?",
+    "expected_answer": "A 'field required' error means a required field is missing from the request. Either provide the field, make it optional with a default value (= None), or use Optional[type] in the Pydantic model.",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/release-notes.md::Features::44",
+      "data/raw/repo/docs/en/docs/tutorial/handling-errors.md::Override request validation exceptions { #override-request-validation-exceptions }",
+      "data/raw/repo/docs/en/docs/tutorial/path-params.md::Data validation { #data-validation }",
+      "data/raw/repo/docs/en/docs/release-notes.md::Breaking Changes - Fixes",
+      "data/raw/repo/docs/en/docs/release-notes.md::0.114.0 (2024-09-06)"
+    ]
+  },
+  {
+    "id": "d04",
+    "category": "debug",
+    "question": "How do I handle CORS errors in FastAPI?",
+    "expected_answer": "Add CORSMiddleware: app.add_middleware(CORSMiddleware, allow_origins=['*'], allow_methods=['*'], allow_headers=['*']). Restrict allow_origins to specific domains in production.",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/tutorial/cors.md::Use `CORSMiddleware` { #use-corsmiddleware }",
+      "data/raw/repo/fastapi/exceptions.py::HTTPException",
+      "data/raw/repo/docs/en/docs/tutorial/cors.md::More info { #more-info }",
+      "data/raw/repo/docs/en/docs/reference/middleware.md::Middleware",
+      "data/raw/repo/docs/en/docs/advanced/middleware.md::Adding ASGI middlewares { #adding-asgi-middlewares }"
+    ]
+  },
+  {
+    "id": "d05",
+    "category": "debug",
+    "question": "Why is my FastAPI dependency not being called?",
+    "expected_answer": "Dependencies must be declared with Depends() in the function signature. Ensure you're using Depends(your_function) not Depends(your_function()) \u2014 calling the function directly bypasses the injection system.",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/tutorial/dependencies/index.md::Simple usage { #simple-usage }",
+      "data/raw/repo/fastapi/param_functions.py::Depends",
+      "data/raw/repo/docs/en/docs/tutorial/dependencies/sub-dependencies.md::Using the same dependency multiple times { #using-the-same-dependency-multiple-times }",
+      "data/raw/repo/fastapi/security/api_key.py::APIKeyCookie",
+      "data/raw/repo/docs/en/docs/tutorial/dependencies/classes-as-dependencies.md::Classes as dependencies { #classes-as-dependencies_1 }"
+    ]
+  },
+  {
+    "id": "d06",
+    "category": "debug",
+    "question": "How do I return a custom error response in FastAPI?",
+    "expected_answer": "Raise an HTTPException with the desired status_code and detail: raise HTTPException(status_code=400, detail='Bad request'). For custom formats, use a custom exception handler registered with app.add_exception_handler().",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/advanced/custom-response.md::Custom Response - HTML, Stream, File, others { #custom-response-html-stream-file-others }",
+      "data/raw/repo/docs/en/docs/advanced/response-directly.md::Returning a custom `Response` { #returning-a-custom-response }",
+      "data/raw/repo/docs/en/docs/reference/responses.md::Custom Response Classes - File, HTML, Redirect, Streaming, etc.",
+      "data/raw/repo/docs/en/docs/tutorial/handling-errors.md::Install custom exception handlers { #install-custom-exception-handlers }",
+      "data/raw/repo/fastapi/exceptions.py::HTTPException"
+    ]
+  },
+  {
+    "id": "d07",
+    "category": "debug",
+    "question": "Why is my Pydantic model not validating nested objects?",
+    "expected_answer": "Ensure nested models are also Pydantic BaseModel subclasses. FastAPI validates nested models recursively, but plain dicts won't be validated unless the type hint specifies a BaseModel.",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/tutorial/body-nested-models.md::Nested Models { #nested-models }",
+      "issue::16138",
+      "data/raw/repo/docs/en/docs/features.md::Pydantic features { #pydantic-features }",
+      "data/raw/repo/docs/en/docs/tutorial/body-nested-models.md::Body - Nested Models { #body-nested-models }",
+      "data/raw/repo/docs/en/docs/python-types.md::Pydantic models { #pydantic-models }"
+    ]
+  },
+  {
+    "id": "d08",
+    "category": "debug",
+    "question": "How do I test a FastAPI endpoint that uses dependencies?",
+    "expected_answer": "Use app.dependency_overrides to replace dependencies in tests: app.dependency_overrides[original_dep] = mock_dep. This allows testing without real databases or external services.",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/advanced/testing-dependencies.md::Use the `app.dependency_overrides` attribute { #use-the-app-dependency-overrides-attribute }",
+      "data/raw/repo/fastapi/param_functions.py::Depends",
+      "data/raw/repo/docs/en/docs/tutorial/dependencies/dependencies-in-path-operation-decorators.md::Global Dependencies { #global-dependencies }",
+      "data/raw/repo/docs/en/docs/reference/dependencies.md::`Depends()`",
+      "data/raw/repo/fastapi/security/http.py::HTTPBasic"
+    ]
+  },
+  {
+    "id": "d09",
+    "category": "debug",
+    "question": "Why is FastAPI returning 404 for my route?",
+    "expected_answer": "Common causes: route not registered (missing include_router or wrong prefix), path parameter mismatch, or trailing slash issues. Check that the route decorator path exactly matches the request URL.",
+    "expected_source_ids": [
+      "issue::16010",
+      "issue::15974",
+      "data/raw/repo/docs/en/docs/tutorial/frontend.md::Custom 404 Page { #custom-404-page }",
+      "data/raw/repo/fastapi/routing.py::_FrontendRoute",
+      "data/raw/repo/docs/en/docs/tutorial/frontend.md::Client-Side Routing { #client-side-routing }"
+    ]
+  },
+  {
+    "id": "d10",
+    "category": "debug",
+    "question": "How do I handle request timeouts in FastAPI?",
+    "expected_answer": "FastAPI itself doesn't have built-in timeout handling. Use anyio's move_on_after or fail_after context managers, or configure timeouts at the uvicorn/reverse proxy level.",
+    "expected_source_ids": [
+      "data/raw/repo/docs/en/docs/alternatives.md::[Requests](https://requests.readthedocs.io) { #requests }",
+      "data/raw/repo/docs/en/docs/deployment/concepts.md::Small Errors Automatically Handled { #small-errors-automatically-handled }",
+      "data/raw/repo/fastapi/applications.py::FastAPI::exception_handler",
+      "data/raw/repo/fastapi/security/api_key.py::APIKeyHeader",
+      "data/raw/repo/fastapi/security/api_key.py::APIKeyCookie"
+    ]
+  }
+]
