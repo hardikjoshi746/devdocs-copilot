@@ -2,7 +2,9 @@
 
 A production-minded RAG system that answers natural-language questions about any codebase. Ingests Python, JavaScript, TypeScript, Java, and Markdown across multiple repos; retrieves with hybrid dense+sparse search; evaluates retrieval quality before generating; caches answers in Redis; and refuses to answer when context is insufficient.
 
-**Stack:** OpenAI embeddings · Chroma · BM25 · Cross-encoder reranker · Claude Sonnet 4.6 (generation) · Claude Haiku 4.5 (evaluation) · tree-sitter (multi-language parsing) · Redis (answer cache)
+Integrates with **Claude Code via MCP** — developers get codebase-grounded answers without leaving their session, at a fraction of the token cost of Claude Code reading files directly.
+
+**Stack:** OpenAI embeddings · Chroma · BM25 · Cross-encoder reranker · Claude Sonnet 4.6 (generation) · Claude Haiku 4.5 (evaluation) · tree-sitter (multi-language parsing) · Redis (answer cache) · MCP (Claude Code integration)
 
 ---
 
@@ -30,6 +32,7 @@ A production-minded RAG system that answers natural-language questions about any
 | Eval | `eval/metrics.py` | Recall@5, answer correctness, faithfulness, latency |
 | Eval | `eval/run_ablations.py` | Runs all system variants, outputs comparison table |
 | API | `api/main.py` | FastAPI service: `POST /query`, `GET /health` |
+| MCP | `mcp__server.py` | MCP server exposing `query_codebase` tool to Claude Code |
 | Tests | `tests/` | `test_chunkers.py`, `test_retrieval.py`, `test_api.py` |
 
 **Not built (deferred):** `infra/` — EC2 deploy script and S3 sync script.
@@ -366,6 +369,62 @@ adRag/
 | Logs | JSONL locally / CloudWatch Logs | 5 GB ingestion/month free tier |
 | API | FastAPI + uvicorn | |
 | Python | 3.11+ | |
+
+---
+
+## Claude Code Integration (MCP)
+
+`mcp__server.py` exposes a `query_codebase` tool via the Model Context Protocol. Once registered, Claude Code automatically calls it when you ask questions about the codebase — no manual queries, no leaving your session.
+
+### Why this is cheaper than Claude Code reading files
+
+Without the MCP tool, Claude Code answers codebase questions by reading files one by one — each file is thousands of tokens of context on every question.
+
+| Approach | Tokens per question | Est. cost |
+|---|---|---|
+| Claude Code reading files | ~3,000–8,000 | ~$0.03–0.08 |
+| MCP tool (cache miss) | ~1,000–2,000 | ~$0.008–0.015 |
+| MCP tool (cache hit) | ~200 | ~$0.001 |
+
+Cache hits compound — a team asking similar questions daily means most answers are free after day 1.
+
+### Setup
+
+```bash
+# Register with Claude Code (one-time)
+claude mcp add devdocs-copilot -- python /path/to/adRag/mcp__server.py
+```
+
+### Usage
+
+Start the API, then open Claude Code in any project:
+
+```bash
+uvicorn api.main:app --reload   # must be running
+claude                          # start Claude Code
+```
+
+Ask naturally — Claude Code calls the tool automatically:
+
+```
+> how does authentication work in this app?
+> how does the frontend call the backend API?
+> where is rate limiting implemented?
+```
+
+Claude Code will show "Using tool: query_codebase" and return a cited answer grounded in your actual source code.
+
+### What the tool returns
+
+```
+## Authentication in This App
+
+The app uses JWT Bearer token auth passed via the Authorization header...
+
+**Sources (EXPAND):**
+- job_scrapper::backend/dependencies.py::get_current_user (data/raw/repos/...)
+- job_scrapper::backend/services/security.py::get_user_key (data/raw/repos/...)
+```
 
 ---
 
