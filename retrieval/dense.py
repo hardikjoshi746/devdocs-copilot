@@ -40,7 +40,7 @@ async def dense_search(query: str, n_results: int = 10) -> list[Document]:
     # Load the same Chroma collection written by embed_and_store.py
     # PersistentClient reads from disk — no server needed
     chroma_client = chromadb.PersistentClient(path="data/chroma")
-    collection = chroma_client.get_or_create_collection("fastapi")
+    collection = chroma_client.get_or_create_collection("devdocs")
 
     # query_embeddings is a list of vectors (one per query)
     # Chroma computes cosine similarity and returns top n_results

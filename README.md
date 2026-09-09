@@ -1,9 +1,8 @@
 # DevDocs Copilot
 
-A production-minded RAG system that answers natural-language questions about the [FastAPI](https://github.com/tiangolo/fastapi) codebase. Ingests Python source, Markdown docs, and GitHub issues; retrieves with hybrid dense+sparse search; evaluates retrieval quality before generating; and refuses to answer when context is insufficient.
+A production-minded RAG system that answers natural-language questions about any codebase. Ingests Python, JavaScript, TypeScript, Java, and Markdown across multiple repos; retrieves with hybrid dense+sparse search; evaluates retrieval quality before generating; and refuses to answer when context is insufficient.
 
-**Corpus:** FastAPI source code + docs + top 500 GitHub issues  
-**Stack:** OpenAI embeddings · Chroma · BM25 · Cross-encoder reranker · Claude Sonnet 4.6 (generation) · Claude Haiku 4.5 (evaluation)
+**Stack:** OpenAI embeddings · Chroma · BM25 · Cross-encoder reranker · Claude Sonnet 4.6 (generation) · Claude Haiku 4.5 (evaluation) · tree-sitter (multi-language parsing)
 
 ---
 
@@ -12,7 +11,7 @@ A production-minded RAG system that answers natural-language questions about the
 | Module | File(s) | Description |
 |---|---|---|
 | Ingestion | `ingestion/fetch_repo.py` | Async GitHub issues fetcher + `clone_repo()` |
-| Ingestion | `ingestion/chunkers.py` | AST-based Python chunker, heading-aware Markdown chunker, issue chunker |
+| Ingestion | `ingestion/chunkers.py` | tree-sitter chunker (Python, JS, JSX, TS, TSX, Java), heading-aware Markdown chunker, fixed-size fallback, issue chunker |
 | Ingestion | `ingestion/embed_and_store.py` | Batched embedding → Chroma; BM25 index serialized to pickle |
 | Ingestion | `ingestion/run_ingestion.py` | End-to-end orchestration runner |
 | Retrieval | `retrieval/dense.py` | Chroma cosine similarity search |
@@ -333,6 +332,7 @@ adRag/
 | Embeddings | `text-embedding-3-small` (OpenAI) | 1536-dim vectors; ~$0.01 total for ingestion |
 | Vector store | Chroma (persistent, local) | `PersistentClient` auto-saves; idempotent on re-run |
 | Sparse retrieval | `rank_bm25` | Tokenized by `.lower().split()`; serialized with pickle |
+| Code parser | `tree-sitter` + language grammars | Python, JS, JSX, TS, TSX, Java; fixed-size fallback for others |
 | Reranker | `cross-encoder/ms-marco-MiniLM-L-6-v2` | Free, local, ~80MB; applied to top-20 only |
 | LLM — generation | `claude-sonnet-4-6` | Structured output with source citations |
 | LLM — evaluation | `claude-haiku-4-5-20251001` | Per-chunk relevance scoring + faithfulness check |
@@ -401,7 +401,7 @@ Total cost to build and evaluate this project at dev/learning scale:
 
 ## Future Work
 
-**Multi-language support** — TypeScript/JavaScript chunker (tree-sitter based). Current AST chunker is Python-only (`ast.parse`).
+**Multi-repo ingestion** — `REPOS` config list with per-repo `src_dirs` scoping; single Chroma collection (`devdocs`) with `repo` + `language` metadata fields for filtering. Auth and query-time filtering deferred.
 
 **UI** — Simple HTML/JS frontend served by FastAPI at `/`. Text input, response display, retrieval quality badge.
 

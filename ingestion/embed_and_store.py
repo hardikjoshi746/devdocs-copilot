@@ -28,7 +28,7 @@ async def embed_and_store(documents: list[Document]) -> None:
     # PersistentClient saves the vector store to disk automatically.
     # get_or_create_collection is idempotent — safe to re-run without duplicating data.
     chroma_client = chromadb.PersistentClient(path="data/chroma")
-    collection = chroma_client.get_or_create_collection("fastapi")
+    collection = chroma_client.get_or_create_collection("devdocs")
 
     # Batch size of 100 — OpenAI accepts up to 2048 texts per request.
     # Batching reduces HTTP round trips from N (one per chunk) to N/100,
