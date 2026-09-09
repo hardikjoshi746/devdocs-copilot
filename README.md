@@ -8,37 +8,6 @@ Integrates with **Claude Code via MCP** — developers get codebase-grounded ans
 
 ---
 
-## What Was Built
-
-| Module | File(s) | Description |
-|---|---|---|
-| Ingestion | `ingestion/fetch_repo.py` | Async GitHub issues fetcher + `clone_repo()` |
-| Ingestion | `ingestion/chunkers.py` | tree-sitter chunker (Python, JS, JSX, TS, TSX, Java), heading-aware Markdown chunker, fixed-size fallback, issue chunker |
-| Ingestion | `ingestion/embed_and_store.py` | Batched embedding → Chroma (`devdocs` collection); BM25 index serialized to pickle; content-hash diffing skips unchanged chunks |
-| Ingestion | `ingestion/run_ingestion.py` | Multi-repo orchestration: REPOS config list → clone → chunk → embed → store; `--pull` flag for incremental updates |
-| Retrieval | `retrieval/dense.py` | Chroma cosine similarity search |
-| Retrieval | `retrieval/sparse.py` | BM25 keyword search |
-| Retrieval | `retrieval/hybrid.py` | Reciprocal Rank Fusion (RRF, k=60) over dense + sparse |
-| Retrieval | `retrieval/reranker.py` | Cross-encoder reranking: top-20 → top-5 |
-| Query | `query/rewriter.py` | HyDE query rewriter (generates fake answer → embed that) |
-| Query | `query/pipeline.py` | Full retrieval pipeline: HyDE → hybrid → rerank |
-| Evaluator | `evaluator/retrieval_evaluator.py` | Scores chunks, routes GOOD / EXPAND / ABSTAIN |
-| Evaluator | `evaluator/faithfulness_check.py` | Post-generation grounding check; strips ungrounded claims |
-| Generation | `generation/answer.py` | Claude Sonnet call with structured output + source citations |
-| Cache | `api/cache.py` | Redis answer cache — SHA-256 keyed, 1hr TTL, skips full pipeline on hit |
-| Monitoring | `monitoring/tracer.py` | Per-step spans with latency; emits to Arize Phoenix (dev) or X-Ray (prod) |
-| Monitoring | `monitoring/logger.py` | Structured JSONL logs locally; CloudWatch Logs in production |
-| Eval | `eval/dataset.py` | 50 hand-written Q&A pairs with ground-truth source IDs |
-| Eval | `eval/metrics.py` | Recall@5, answer correctness, faithfulness, latency |
-| Eval | `eval/run_ablations.py` | Runs all system variants, outputs comparison table |
-| API | `api/main.py` | FastAPI service: `POST /query`, `GET /health` |
-| MCP | `mcp__server.py` | MCP server exposing `query_codebase` tool to Claude Code |
-| Tests | `tests/` | `test_chunkers.py`, `test_retrieval.py`, `test_api.py` |
-
-**Not built (deferred):** `infra/` — EC2 deploy script and S3 sync script.
-
----
-
 ## Eval Results
 
 Evaluated against 50 hand-written Q&A pairs, stratified across 4 question types.
@@ -275,41 +244,6 @@ Cache hits log a single `cache_hit` event with no pipeline spans.
 | Singleton API clients | Fixed connection exhaustion on long eval runs |
 | Cross-encoder lazy load | Moved to first call — eliminates import-time thread deadlock |
 | O(1) parent chunk index | EXPAND path lookup: O(n) scan → O(1) dict lookup |
-
----
-
-## Data Storage & Flow
-
-### Local Directory Structure
-
-```
-data/
-├── raw/
-│   └── repos/
-│       └── job_scrapper/          # git clone of each repo
-│           ├── backend/           # Python source
-│           └── frontend/src/      # React/JS source
-│
-├── chunks/
-│   └── chunks.jsonl               # normalized Document objects (inspectable, re-embeddable)
-│
-├── chroma/                        # Chroma vector store — collection: "devdocs"
-│   ├── chroma.sqlite3
-│   └── <collection-uuid>/
-│
-└── bm25.pkl                       # BM25Okapi index serialized with pickle
-```
-
-Issue files land at `data/raw/repos/{name}_issues.jsonl`.
-
-### S3 Structure (target, not yet implemented)
-
-```
-s3://{S3_BUCKET}/
-├── chunks/chunks.jsonl
-├── chroma/chroma.tar.gz
-└── bm25.pkl
-```
 
 ---
 
