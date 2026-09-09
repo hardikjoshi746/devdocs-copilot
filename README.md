@@ -1,8 +1,8 @@
 # DevDocs Copilot
 
-A production-minded RAG system that answers natural-language questions about any codebase. Ingests Python, JavaScript, TypeScript, Java, and Markdown across multiple repos; retrieves with hybrid dense+sparse search; evaluates retrieval quality before generating; and refuses to answer when context is insufficient.
+A production-minded RAG system that answers natural-language questions about any codebase. Ingests Python, JavaScript, TypeScript, Java, and Markdown across multiple repos; retrieves with hybrid dense+sparse search; evaluates retrieval quality before generating; caches answers in Redis; and refuses to answer when context is insufficient.
 
-**Stack:** OpenAI embeddings · Chroma · BM25 · Cross-encoder reranker · Claude Sonnet 4.6 (generation) · Claude Haiku 4.5 (evaluation) · tree-sitter (multi-language parsing)
+**Stack:** OpenAI embeddings · Chroma · BM25 · Cross-encoder reranker · Claude Sonnet 4.6 (generation) · Claude Haiku 4.5 (evaluation) · tree-sitter (multi-language parsing) · Redis (answer cache)
 
 ---
 
@@ -12,8 +12,8 @@ A production-minded RAG system that answers natural-language questions about any
 |---|---|---|
 | Ingestion | `ingestion/fetch_repo.py` | Async GitHub issues fetcher + `clone_repo()` |
 | Ingestion | `ingestion/chunkers.py` | tree-sitter chunker (Python, JS, JSX, TS, TSX, Java), heading-aware Markdown chunker, fixed-size fallback, issue chunker |
-| Ingestion | `ingestion/embed_and_store.py` | Batched embedding → Chroma; BM25 index serialized to pickle |
-| Ingestion | `ingestion/run_ingestion.py` | End-to-end orchestration runner |
+| Ingestion | `ingestion/embed_and_store.py` | Batched embedding → Chroma (`devdocs` collection); BM25 index serialized to pickle |
+| Ingestion | `ingestion/run_ingestion.py` | Multi-repo orchestration: REPOS config list → clone → chunk → embed → store |
 | Retrieval | `retrieval/dense.py` | Chroma cosine similarity search |
 | Retrieval | `retrieval/sparse.py` | BM25 keyword search |
 | Retrieval | `retrieval/hybrid.py` | Reciprocal Rank Fusion (RRF, k=60) over dense + sparse |
@@ -23,6 +23,7 @@ A production-minded RAG system that answers natural-language questions about any
 | Evaluator | `evaluator/retrieval_evaluator.py` | Scores chunks, routes GOOD / EXPAND / ABSTAIN |
 | Evaluator | `evaluator/faithfulness_check.py` | Post-generation grounding check; strips ungrounded claims |
 | Generation | `generation/answer.py` | Claude Sonnet call with structured output + source citations |
+| Cache | `api/cache.py` | Redis answer cache — SHA-256 keyed, 1hr TTL, skips full pipeline on hit |
 | Monitoring | `monitoring/tracer.py` | Per-step spans with latency; emits to Arize Phoenix (dev) or X-Ray (prod) |
 | Monitoring | `monitoring/logger.py` | Structured JSONL logs locally; CloudWatch Logs in production |
 | Eval | `eval/dataset.py` | 50 hand-written Q&A pairs with ground-truth source IDs |
@@ -71,45 +72,40 @@ Raw results are in `eval/ablation_results.json` and `eval/results_full.json`.
 ## System Design
 
 ```
-                     ┌─────────────────────────┐
-                     │      REST API (FastAPI)   │
-                     │  POST /query              │
-                     │  GET  /health             │
-                     └────────────┬─────────────┘
-                                  │
-                     ┌────────────▼─────────────┐
-                     │       Query Pipeline      │
-                     │                           │
-                     │  [1] HyDE Rewriter        │
-                     │       (Haiku 4.5)         │
-                     │          │                │
-                     │  [2] Hybrid Retriever     │
-                     │    Dense + BM25 + RRF     │
-                     │          │                │
-                     │  [3] Cross-Encoder        │
-                     │      Reranker             │
-                     │       top-20 → top-5      │
-                     │          │                │
-                     │  [4] Retrieval Evaluator  │◄── GOOD / EXPAND / ABSTAIN
-                     │       (Haiku 4.5)         │
-                     │          │                │
-                     │  [5] Claude Generator     │
-                     │      (Sonnet 4.6)         │
-                     │      + Citations          │
-                     │          │                │
-                     │  [6] Faithfulness Check   │
-                     └────────────┬─────────────┘
-                                  │
-                ┌─────────────────┴──────────────────┐
-                │                                     │
-   ┌────────────▼────────────┐          ┌─────────────▼──────────┐
-   │   Local Dev              │          │   AWS Production        │
-   │                          │          │   (free tier)           │
-   │   Arize Phoenix          │          │   CloudWatch Logs       │
-   │   JSONL logs             │          │   AWS X-Ray             │
-   │   Chroma (local disk)    │          │   CloudWatch Metrics    │
-   │   BM25 pickle            │          │   S3 (corpus + index)   │
-   └──────────────────────────┘          └────────────────────────┘
+  ┌─────────────────────────────────────────────┐
+  │              REST API (FastAPI)              │
+  │          POST /query   GET /health           │
+  └───────────────────┬─────────────────────────┘
+                      │
+          ┌───────────▼───────────┐
+          │     Redis Cache       │ ◄── cache hit → return instantly ($0 LLM cost)
+          └───────────┬───────────┘
+                 cache miss
+                      │
+  ┌───────────────────▼─────────────────────────┐
+  │                Query Pipeline               │
+  │                                             │
+  │  [1] HyDE Rewriter        (Haiku 4.5)       │
+  │          │                                  │
+  │  [2] Hybrid Retriever                       │
+  │       Dense (Chroma) + Sparse (BM25) + RRF  │
+  │          │                                  │
+  │  [3] Cross-Encoder Reranker                 │
+  │       top-20 → top-5                        │
+  │          │                                  │
+  │  [4] Retrieval Evaluator  (Haiku 4.5)       │◄── GOOD / EXPAND / ABSTAIN
+  │          │                                  │
+  │  [5] Claude Generator     (Sonnet 4.6)      │
+  │       + Source Citations                    │
+  │          │                                  │
+  │  [6] Faithfulness Check   (Sonnet 4.6)      │
+  └───────────────────┬─────────────────────────┘
+                      │
+            store in Redis cache
+                      │
+              ┌───────▼────────┐
+              │  QueryResponse │
+              └────────────────┘
 ```
 
 ### API Contract
@@ -151,33 +147,58 @@ avg score < 0.4   →  ABSTAIN: return 503, log full trace
 | LLM returns ungrounded claims | Faithfulness check post-generation | Strip claim; return grounded answer only |
 | BM25 index stale | Checksum mismatch on load | Rebuild index |
 | Embedding API rate-limited | Exponential backoff, 3 retries | 429 → 503 after retries exhausted |
+| Redis unavailable | `_redis is None` guard in `/query` | Graceful degradation — cache skipped, pipeline runs normally |
 
 ---
 
 ## Design Decisions
 
-### Type-aware chunking
+### Multi-language chunking with tree-sitter
 
-Three distinct chunkers for three content types:
+Replaced `ast.parse` (Python-only) with **tree-sitter**, a single parsing library with grammar packages for each language. The same parent-child chunking structure applies across all languages:
 
-- **Python source** — AST-based (`ast.parse`), splits at function/class boundaries. Never cuts mid-function. Methods are child chunks of their parent class, enabling the EXPAND path to fetch the full class when a method chunk scores borderline.
-- **Markdown docs** — heading-boundary split, skips `#` inside fenced code blocks. Preserves section context.
-- **GitHub issues** — one Document per issue (title + body), enabling keyword search over real user bug reports.
+| Extension | Language | Parser |
+|---|---|---|
+| `.py` | Python | `tree-sitter-python` |
+| `.js`, `.jsx` | JavaScript / React | `tree-sitter-javascript` |
+| `.ts`, `.tsx` | TypeScript / React | `tree-sitter-typescript` |
+| `.java` | Java | `tree-sitter-java` |
+| anything else | — | Fixed 100-line chunks, 20-line overlap |
+
+Every code chunk gets `language` and `repo` metadata fields for future query-time filtering.
+
+Chunk IDs are prefixed with the repo name to prevent collisions across repos:
+```
+job_scrapper::backend/dependencies.py::get_current_user
+job_scrapper::frontend/src/context/AuthContext.jsx::AuthContext
+```
+
+### Multi-repo ingestion
+
+`run_ingestion.py` accepts a `REPOS` config list. Each entry specifies a GitHub slug and which subdirectories to walk (`src_dirs`), allowing fine-grained control over what gets ingested — for example, skipping `node_modules/`, `migrations/`, and test fixtures:
 
 ```python
-@dataclass
-class Document:
-    id: str            # filepath::ClassName::method — unique across corpus
-    content: str
-    type: Literal["code", "doc", "issue"]
-    source: str        # file path or issue URL
-    parent_id: str | None  # class chunk for method chunks; None otherwise
-    metadata: dict
+REPOS = [
+    {"slug": "hardikjoshi746/job_scrapper", "name": "job_scrapper", "src_dirs": ["backend", "frontend/src"]},
+]
 ```
+
+All repos share a single Chroma collection (`devdocs`) and a single BM25 index.
+
+### Redis answer cache
+
+Every successful query response is stored in Redis keyed by SHA-256 of the normalized question. Subsequent identical queries return instantly with zero LLM API cost.
+
+```
+Cache key = SHA-256(question.lower().strip())
+TTL       = 1 hour (configurable via CACHE_TTL_SECONDS)
+```
+
+If Redis is unavailable at startup, the cache is silently skipped — the pipeline continues to work normally.
 
 ### Hybrid retrieval + RRF
 
-Dense retrieval misses exact API names (`HTTPException`, `Depends`). BM25 catches those; dense catches paraphrases. RRF fuses both ranked lists using rank position only (ignoring incompatible raw scores):
+Dense retrieval misses exact API names (`get_current_user`, `HTTPException`). BM25 catches those; dense catches paraphrases. RRF fuses both ranked lists using rank position only:
 
 ```
 RRF score = Σ  1 / (k + rank_i)    k=60
@@ -185,15 +206,11 @@ RRF score = Σ  1 / (k + rank_i)    k=60
 
 ### HyDE query rewriting
 
-"How do I handle a 404?" is semantically distant from `raise HTTPException(status_code=404)`. HyDE generates a fake "ideal answer" using Haiku 4.5, embeds that instead of the question. The fake answer lives in the same vector space as real chunks — retrieval improves. The fake answer is discarded after retrieval; the original query is used for reranking and generation.
+"How does auth work?" is semantically distant from `def get_current_user(credentials: HTTPAuthorizationCredentials)`. HyDE generates a fake "ideal answer" using Haiku 4.5 and embeds that instead. The fake answer is discarded after retrieval; the original query is used for reranking and generation.
 
 ### ABSTAIN over hallucination
 
-`503 retrieval_quality_too_low` is a recoverable, honest failure. A confident wrong answer with citations is not. The evaluator is a pre-generation gate; the faithfulness check is a post-generation filter. Both independent checks reduce ungrounded output.
-
-### Monitoring from the start
-
-`tracer.py` wraps every pipeline step. The `TRACER_BACKEND` env var switches between Arize Phoenix (local) and AWS X-Ray (production) with no code changes. Latency, token counts, and routing decisions are captured per span.
+`503 retrieval_quality_too_low` is a recoverable, honest failure. A confident wrong answer with citations is not. The evaluator is a pre-generation gate; the faithfulness check is a post-generation filter.
 
 ---
 
@@ -204,7 +221,7 @@ Every `/query` request emits per-step spans and a structured log entry.
 ### Sample Trace (console)
 
 ```
-[trace:35bf3ff1] START — What parameters does HTTPException accept?
+[trace:35bf3ff1] START — How does authentication work in this app?
 [35bf3ff1] rewrite          — 3554ms
 [35bf3ff1] hybrid_search    — 2332ms
 [35bf3ff1] rerank           — 4119ms
@@ -214,16 +231,20 @@ Every `/query` request emits per-step spans and a structured log entry.
 [trace:35bf3ff1] END
 ```
 
-### Sample Log Entry (`logs/app.jsonl`)
+Cache hits log a single `cache_hit` event with no pipeline spans.
+
+### Sample Log Entries (`logs/app.jsonl`)
 
 ```json
-{"timestamp": "2026-09-08T20:42:47.518793+00:00", "trace_id": "7235958f", "event": "query_complete", "quality": "EXPAND", "question": "What parameters does HTTPException accept?"}
+{"timestamp": "2026-09-09T10:12:01.000000+00:00", "event": "cache_hit", "question": "How does authentication work in this app?"}
+{"timestamp": "2026-09-09T10:11:30.000000+00:00", "trace_id": "7235958f", "event": "query_complete", "quality": "EXPAND", "question": "How does authentication work in this app?"}
 ```
 
-### Performance Optimizations Applied
+### Performance Optimizations
 
 | Optimization | Impact |
 |---|---|
+| Redis answer cache | Repeat queries: 15–26s → <100ms, $0 LLM cost |
 | HyDE response cache (in-memory) | rewrite: 3500ms → 0ms on repeat queries |
 | Singleton API clients | Fixed connection exhaustion on long eval runs |
 | Cross-encoder lazy load | Moved to first call — eliminates import-time thread deadlock |
@@ -238,29 +259,29 @@ Every `/query` request emits per-step spans and a structured log entry.
 ```
 data/
 ├── raw/
-│   ├── repo/                  # git clone of FastAPI
-│   │   ├── fastapi/           # Python source files
-│   │   └── docs/en/docs/      # English Markdown docs
-│   └── issues.jsonl           # fetched GitHub issues (one JSON object per line)
+│   └── repos/
+│       └── job_scrapper/          # git clone of each repo
+│           ├── backend/           # Python source
+│           └── frontend/src/      # React/JS source
 │
 ├── chunks/
-│   └── chunks.jsonl           # normalized Document objects (inspectable, re-embeddable)
+│   └── chunks.jsonl               # normalized Document objects (inspectable, re-embeddable)
 │
-├── chroma/                    # Chroma vector store persisted to disk
+├── chroma/                        # Chroma vector store — collection: "devdocs"
 │   ├── chroma.sqlite3
 │   └── <collection-uuid>/
 │
-└── bm25.pkl                   # BM25Okapi index serialized with pickle
+└── bm25.pkl                       # BM25Okapi index serialized with pickle
 ```
 
-`data/` is gitignored. `data/raw/` is never uploaded — the repo can be re-cloned and issues re-fetched. `chunks.jsonl`, `chroma/`, and `bm25.pkl` are the artifacts that need to be stored or synced.
+Issue files land at `data/raw/repos/{name}_issues.jsonl`.
 
 ### S3 Structure (target, not yet implemented)
 
 ```
 s3://{S3_BUCKET}/
-├── chunks/chunks.jsonl        # allows re-embedding without re-chunking
-├── chroma/chroma.tar.gz       # Chroma directory tarred for upload
+├── chunks/chunks.jsonl
+├── chroma/chroma.tar.gz
 └── bm25.pkl
 ```
 
@@ -273,13 +294,13 @@ adRag/
 ├── pyproject.toml
 ├── pytest.ini
 ├── .env.example
-├── .gitignore                  # data/ and .env gitignored
+├── .gitignore
 │
 ├── ingestion/
 │   ├── fetch_repo.py           # clone repo; fetch GitHub issues via REST API
-│   ├── chunkers.py             # AST chunker, heading chunker, issue chunker
-│   ├── embed_and_store.py      # batch embed → Chroma; tokenize → BM25 pickle
-│   └── run_ingestion.py        # orchestration: clone → chunk → embed → store
+│   ├── chunkers.py             # tree-sitter chunker, markdown chunker, issue chunker
+│   ├── embed_and_store.py      # batch embed → Chroma "devdocs"; tokenize → BM25 pickle
+│   └── run_ingestion.py        # REPOS config list → clone → chunk → embed → store
 │
 ├── retrieval/
 │   ├── dense.py                # Chroma similarity search
@@ -298,20 +319,20 @@ adRag/
 ├── generation/
 │   └── answer.py               # Claude Sonnet call; structured output + citations
 │
+├── api/
+│   ├── main.py                 # FastAPI: POST /query, GET /health; Redis lifespan
+│   └── cache.py                # Redis get/set with SHA-256 key and TTL
+│
 ├── monitoring/
 │   ├── tracer.py               # per-step spans; Phoenix (dev) or X-Ray (prod)
 │   └── logger.py               # JSONL locally; CloudWatch Logs in production
 │
 ├── eval/
-│   ├── dataset.py              # 50 Q&A pairs with ground-truth source IDs
-│   ├── dataset_with_ids.json   # dataset serialized with chunk IDs
-│   ├── metrics.py              # recall@5, correctness, faithfulness, latency
-│   ├── run_ablations.py        # runs all variants, writes comparison JSON
-│   ├── ablation_results.json   # full ablation output
-│   └── results_full.json       # per-question detailed results
-│
-├── api/
-│   └── main.py                 # FastAPI: POST /query, GET /health
+│   ├── dataset.py
+│   ├── metrics.py
+│   ├── run_ablations.py
+│   ├── ablation_results.json
+│   └── results_full.json
 │
 ├── tests/
 │   ├── conftest.py
@@ -320,7 +341,7 @@ adRag/
 │   └── test_api.py
 │
 └── logs/
-    └── app.jsonl               # runtime structured logs
+    └── app.jsonl
 ```
 
 ---
@@ -330,10 +351,11 @@ adRag/
 | Layer | Tool | Notes |
 |---|---|---|
 | Embeddings | `text-embedding-3-small` (OpenAI) | 1536-dim vectors; ~$0.01 total for ingestion |
-| Vector store | Chroma (persistent, local) | `PersistentClient` auto-saves; idempotent on re-run |
+| Vector store | Chroma — collection `devdocs` | `PersistentClient` auto-saves; idempotent on re-run |
 | Sparse retrieval | `rank_bm25` | Tokenized by `.lower().split()`; serialized with pickle |
 | Code parser | `tree-sitter` + language grammars | Python, JS, JSX, TS, TSX, Java; fixed-size fallback for others |
 | Reranker | `cross-encoder/ms-marco-MiniLM-L-6-v2` | Free, local, ~80MB; applied to top-20 only |
+| Answer cache | Redis | SHA-256 key, 1hr TTL; graceful degradation if unavailable |
 | LLM — generation | `claude-sonnet-4-6` | Structured output with source citations |
 | LLM — evaluation | `claude-haiku-4-5-20251001` | Per-chunk relevance scoring + faithfulness check |
 | Traces (dev) | Arize Phoenix | Local UI at `localhost:6006` |
@@ -353,21 +375,19 @@ pip install -e ".[dev]"
 # 2. Configure
 cp .env.example .env
 # Set: OPENAI_API_KEY, ANTHROPIC_API_KEY, GITHUB_TOKEN
-# Optional: TRACER_BACKEND=phoenix  (default; use xray in production)
+# Optional: REDIS_URL (default: redis://localhost:6379), CACHE_TTL_SECONDS (default: 3600)
 
-# 3. Ingest (clones FastAPI repo, chunks, embeds, stores — ~10 min first run)
+# 3. Start Redis (macOS)
+brew install redis && brew services start redis
+
+# 4. Add repos to REPOS list in ingestion/run_ingestion.py, then ingest
 python -m ingestion.run_ingestion
 
-# 4. Run the API
+# 5. Run the API
 uvicorn api.main:app --reload
 
-# 5. Query
-curl -X POST http://localhost:8000/query \
-  -H "Content-Type: application/json" \
-  -d '{"question": "How does FastAPI handle dependency injection?"}'
-
-# 6. Run eval suite
-python -m eval.run_ablations
+# 6. Query
+curl -s -X POST http://localhost:8000/query -H "Content-Type: application/json" -d '{"question": "How does authentication work in this app?"}'
 
 # 7. Run tests
 pytest tests/
@@ -380,6 +400,8 @@ pytest tests/
 | `OPENAI_API_KEY` | Yes | Used for `text-embedding-3-small` |
 | `ANTHROPIC_API_KEY` | Yes | Used for generation and evaluation |
 | `GITHUB_TOKEN` | Yes | Used by `fetch_repo.py` to pull issues |
+| `REDIS_URL` | No | Default: `redis://localhost:6379` |
+| `CACHE_TTL_SECONDS` | No | Default: `3600` (1 hour) |
 | `TRACER_BACKEND` | No | `phoenix` (default) or `xray` |
 | `AWS_REGION` | Prod only | For X-Ray and CloudWatch |
 | `S3_BUCKET` | Prod only | For corpus + index storage |
@@ -388,12 +410,26 @@ pytest tests/
 
 ## Cost
 
-Total cost to build and evaluate this project at dev/learning scale:
+### Per-query breakdown
+
+| Step | Model | Est. cost |
+|---|---|---|
+| HyDE rewrite | Haiku 4.5 | ~$0.0001 |
+| Query embedding | `text-embedding-3-small` | ~$0.000001 |
+| Retrieval eval (5 chunks) | Haiku 4.5 | ~$0.0005 |
+| Generation | Sonnet 4.6 | ~$0.003–0.01 |
+| Faithfulness check | Sonnet 4.6 | ~$0.002–0.005 |
+| **Cache hit** | — | **$0.00** |
+
+Generation + faithfulness = ~85% of per-query cost. Redis cache eliminates this entirely on repeat questions.
+
+### Total project cost (dev/learning scale)
 
 | Item | Cost |
 |---|---|
 | OpenAI embeddings (~500K tokens ingestion) | ~$0.01 one-time |
 | Anthropic API (~1K queries during eval runs) | ~$1–3 total |
+| Redis | $0 (local) |
 | All infrastructure (EC2, S3, CloudWatch, X-Ray — free tier) | $0 |
 | **Total** | **< $5** |
 
@@ -401,12 +437,14 @@ Total cost to build and evaluate this project at dev/learning scale:
 
 ## Future Work
 
-**Multi-repo ingestion** — `REPOS` config list with per-repo `src_dirs` scoping; single Chroma collection (`devdocs`) with `repo` + `language` metadata fields for filtering. Auth and query-time filtering deferred.
+**Authorization** — `X-API-Key` header mapped to `allowed_repos` list; Chroma `where={"repo": {"$in": allowed_repos}}` filter enforced at query time. Different devs see only their repos.
 
-**UI** — Simple HTML/JS frontend served by FastAPI at `/`. Text input, response display, retrieval quality badge.
+**Rate limiting** — Redis-backed `fastapi-limiter`; 10 requests/minute per API key → 429 with `Retry-After`.
 
-**AWS deployment** — `infra/s3_sync.sh` (push/pull data artifacts) and `infra/deploy_ec2.sh` (bootstrap EC2 t2.micro). Both are designed but not yet written.
+**UI** — Simple HTML/JS frontend served at `/`. Text input, response display, `retrieval_quality` badge.
 
-**Self-RAG** — LLM emits reflection tokens mid-generation to decide when to retrieve rather than retrieving once upfront. Real uplift on multi-step questions; deferred.
+**AWS deployment** — `infra/s3_sync.sh` and `infra/deploy_ec2.sh`. Designed but not yet written.
 
-**Fine-tuned embeddings** — Train on `(query, positive chunk, hard negative)` triples mined from real retrieval failures. Do this after the eval baseline is solid, not before.
+**Self-RAG** — LLM emits reflection tokens mid-generation to decide when to retrieve. Deferred.
+
+**Fine-tuned embeddings** — Train on `(query, positive chunk, hard negative)` triples mined from real retrieval failures.
