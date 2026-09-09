@@ -3,30 +3,33 @@ from dotenv import load_dotenv
 import json
 import os
 import asyncio
+import argparse
 
 from redis.asyncio import Redis
-from ingestion.fetch_repo import clone_repo, fetch_issues, Issue
+from ingestion.fetch_repo import clone_repo, pull_repo, fetch_issues, Issue
 from ingestion.chunkers import chunk_code_file, chunk_markdown_file, chunk_issue, detect_language
 from ingestion.embed_and_store import embed_and_store
 
 load_dotenv()
 
-REPOS = [
-    {
-        "slug": "hardikjoshi746/job_scrapper",
-        "name": "job_scrapper",
-        "src_dirs": ["backend", "frontend/src"],
-    },
-]
+# REPOS is read from .env as a JSON array so you can add repos without editing source code.
+# Format: [{"slug": "owner/repo", "name": "repo", "src_dirs": ["dir1", "dir2"]}]
+_repos_env = os.environ.get("REPOS")
+if not _repos_env:
+    raise EnvironmentError("REPOS not set in .env — add a JSON array of repos to ingest")
+REPOS: list[dict] = json.loads(_repos_env)
 
 CODE_EXTENSIONS = {".py", ".js", ".jsx", ".ts", ".tsx", ".java"}
 
 
-async def ingest_repo(slug: str, name: str, src_dirs: list[str], base_dir: Path) -> list:
+async def ingest_repo(slug: str, name: str, src_dirs: list[str], base_dir: Path, pull: bool = False) -> list:
     repo_dir = base_dir / name
 
-    # 1. Clone (idempotent — skips if already present)
+    # 1. Clone (idempotent — skips if already present), then optionally pull latest
     clone_repo(slug, repo_dir)
+    if pull:
+        print(f"  [{name}] pulling latest...")
+        pull_repo(repo_dir)
 
     # 2. Fetch GitHub issues (idempotent — skips if file already exists)
     issues_path = base_dir / f"{name}_issues.jsonl"
@@ -81,6 +84,10 @@ async def ingest_repo(slug: str, name: str, src_dirs: list[str], base_dir: Path)
 
 
 async def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--pull", action="store_true", help="git pull each repo before re-ingesting")
+    args = parser.parse_args()
+
     base_dir = Path("data/raw/repos")
     base_dir.mkdir(parents=True, exist_ok=True)
 
@@ -92,20 +99,22 @@ async def main():
             name=repo["name"],
             src_dirs=repo["src_dirs"],
             base_dir=base_dir,
+            pull=args.pull,
         )
 
     print(f"\nTotal: {len(all_docs)} chunks")
-    await embed_and_store(all_docs)
+    changed = await embed_and_store(all_docs)
 
     # Flush Redis cache — cached answers are now stale since the corpus changed
-    redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379")
-    try:
-        redis = Redis.from_url(redis_url)
-        await redis.flushdb()
-        await redis.aclose()
-        print("Cache flushed.")
-    except Exception:
-        print("Redis not reachable — cache not flushed (start Redis before querying).")
+    if changed:
+        redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379")
+        try:
+            redis = Redis.from_url(redis_url)
+            await redis.flushdb()
+            await redis.aclose()
+            print("Cache flushed.")
+        except Exception:
+            print("Redis not reachable — cache not flushed (start Redis before querying).")
 
     print("Done.")
 

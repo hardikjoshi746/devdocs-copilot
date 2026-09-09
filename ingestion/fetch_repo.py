@@ -16,8 +16,13 @@ def clone_repo(repo: str, dest: Path) -> Path:
         print("idempotent — safe to re-run")
         return dest
     url = f'https://github.com/{repo}.git'
-    subprocess.run(["git", "clone", url, str(dest)], check=True) 
+    subprocess.run(["git", "clone", url, str(dest)], check=True)
     return dest
+
+
+def pull_repo(dest: Path) -> None:
+    """Run git pull inside an already-cloned repo to fetch latest commits."""
+    subprocess.run(["git", "-C", str(dest), "pull"], check=True)
 
 
 

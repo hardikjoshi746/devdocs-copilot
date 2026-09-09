@@ -14,8 +14,8 @@ Integrates with **Claude Code via MCP** — developers get codebase-grounded ans
 |---|---|---|
 | Ingestion | `ingestion/fetch_repo.py` | Async GitHub issues fetcher + `clone_repo()` |
 | Ingestion | `ingestion/chunkers.py` | tree-sitter chunker (Python, JS, JSX, TS, TSX, Java), heading-aware Markdown chunker, fixed-size fallback, issue chunker |
-| Ingestion | `ingestion/embed_and_store.py` | Batched embedding → Chroma (`devdocs` collection); BM25 index serialized to pickle |
-| Ingestion | `ingestion/run_ingestion.py` | Multi-repo orchestration: REPOS config list → clone → chunk → embed → store |
+| Ingestion | `ingestion/embed_and_store.py` | Batched embedding → Chroma (`devdocs` collection); BM25 index serialized to pickle; content-hash diffing skips unchanged chunks |
+| Ingestion | `ingestion/run_ingestion.py` | Multi-repo orchestration: REPOS config list → clone → chunk → embed → store; `--pull` flag for incremental updates |
 | Retrieval | `retrieval/dense.py` | Chroma cosine similarity search |
 | Retrieval | `retrieval/sparse.py` | BM25 keyword search |
 | Retrieval | `retrieval/hybrid.py` | Reciprocal Rank Fusion (RRF, k=60) over dense + sparse |
@@ -174,6 +174,26 @@ Chunk IDs are prefixed with the repo name to prevent collisions across repos:
 ```
 job_scrapper::backend/dependencies.py::get_current_user
 job_scrapper::frontend/src/context/AuthContext.jsx::AuthContext
+```
+
+### Content-hash diffing (incremental re-ingestion)
+
+On every ingestion run, `embed_and_store` fetches the `content_hash` stored in Chroma metadata for every existing chunk and compares it against `SHA-256(chunk.content)` for the current chunks. Only three categories of chunks touch the OpenAI embedding API:
+
+| Category | Action |
+|---|---|
+| New chunk (ID not in Chroma) | Embed + upsert |
+| Changed chunk (hash mismatch) | Re-embed + upsert |
+| Deleted chunk (ID gone from new docs) | Delete from Chroma |
+| Unchanged chunk (hash match) | Skip entirely — $0 cost |
+
+On a typical commit that touches 2–3 files out of 100, ~95% of chunks are skipped. Re-ingestion cost drops from "embed everything" to "embed only what changed."
+
+To pick up new commits automatically:
+
+```bash
+python -m ingestion.run_ingestion --pull   # git pull each repo, then diff + re-embed
+python -m ingestion.run_ingestion          # diff only — assumes you already pulled
 ```
 
 ### Multi-repo ingestion
@@ -445,6 +465,9 @@ brew install redis && brew services start redis
 # 4. Add repos to REPOS list in ingestion/run_ingestion.py, then ingest
 python -m ingestion.run_ingestion
 
+# Re-ingest after new commits (only changed chunks are re-embedded)
+python -m ingestion.run_ingestion --pull
+
 # 5. Run the API
 uvicorn api.main:app --reload
 
@@ -462,6 +485,7 @@ pytest tests/
 | `OPENAI_API_KEY` | Yes | Used for `text-embedding-3-small` |
 | `ANTHROPIC_API_KEY` | Yes | Used for generation and evaluation |
 | `GITHUB_TOKEN` | Yes | Used by `fetch_repo.py` to pull issues |
+| `REPOS` | Yes | JSON array of repos: `[{"slug": "owner/repo", "name": "repo", "src_dirs": [...]}]` |
 | `REDIS_URL` | No | Default: `redis://localhost:6379` |
 | `TRACER_BACKEND` | No | `phoenix` (default) or `xray` |
 | `AWS_REGION` | Prod only | For X-Ray and CloudWatch |

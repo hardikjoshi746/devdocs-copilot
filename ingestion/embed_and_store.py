@@ -7,9 +7,12 @@ from rank_bm25 import BM25Okapi
 from pathlib import Path
 import pickle
 import json
+import hashlib
 
+def _content_hash(content: str) -> str:
+    return hashlib.sha256(content.encode()).hexdigest()
 
-async def embed_and_store(documents: list[Document]) -> None:
+async def embed_and_store(documents: list[Document]) -> bool:
     """
     Embed all Document chunks and persist them in three forms:
       1. Chroma vector store  — for dense (semantic) retrieval
@@ -30,14 +33,32 @@ async def embed_and_store(documents: list[Document]) -> None:
     chroma_client = chromadb.PersistentClient(path="data/chroma")
     collection = chroma_client.get_or_create_collection("devdocs")
 
+    exsisting = collection.get(include=["metadatas"])
+    exsisting_hashes = {
+        id: meta.get("content_hash", "")
+        for id, meta in zip(exsisting["ids"], exsisting["metadatas"])
+    }
+
+    new_ids = {doc.id for doc in documents}
+    to_embed = [
+        doc for doc in documents
+        if doc.id not in exsisting_hashes
+        or _content_hash(doc.content) != exsisting_hashes[doc.id]
+    ]
+
+    to_delete = [
+        id for id in exsisting_hashes
+        if id not in new_ids
+    ]
+
     # Batch size of 100 — OpenAI accepts up to 2048 texts per request.
     # Batching reduces HTTP round trips from N (one per chunk) to N/100,
     # dramatically cutting latency and rate-limit risk. Cost is the same
     # (charged per token, not per request).
     batch_size = 100
 
-    for i in range(0, len(documents), batch_size):
-        batch = documents[i: i + batch_size]
+    for i in range(0, len(to_embed), batch_size):
+        batch = to_embed[i: i + batch_size]
 
         # Single API call for the whole batch — returns one embedding per input.
         # text-embedding-3-small produces 1536-dimensional vectors.
@@ -54,7 +75,7 @@ async def embed_and_store(documents: list[Document]) -> None:
         # Store in Chroma: ids for deduplication, documents (text) returned at query
         # time as context for the LLM, embeddings for similarity search, metadatas
         # for filtering (e.g. content_type="code" filter in the API).
-        collection.add(
+        collection.upsert(
             ids=[doc.id for doc in batch],
             documents=[doc.content for doc in batch],
             embeddings=vectors,
@@ -63,10 +84,17 @@ async def embed_and_store(documents: list[Document]) -> None:
                     **{k: ",".join(v) if isinstance(v, list) else v for k, v in doc.metadata.items()},
                     "type": doc.type,
                     "source": doc.source,
+                    "content_hash": _content_hash(doc.content),
                 }
                 for doc in batch
             ],
         )
+
+    if to_delete:
+        collection.delete(ids=to_delete)
+        print(f"Deleted {len(to_delete)} removed chunks")
+
+    print(f"Embedded {len(to_embed)} chunks ({len(documents) - len(to_embed)} unchanged, {len(to_delete)} deleted)")
 
     # BM25 — keyword-based sparse retrieval index.
     # Tokenize by lowercasing and splitting on whitespace. Simple but effective
@@ -92,6 +120,9 @@ async def embed_and_store(documents: list[Document]) -> None:
     with chunk_path.open("w") as f:
         for doc in documents:
             f.write(json.dumps(asdict(doc)) + "\n")
+    
+    return len(to_embed) > 0
+
 
 
 
