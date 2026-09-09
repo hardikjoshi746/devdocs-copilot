@@ -1,9 +1,6 @@
 import hashlib
 import json
-import os
 from redis.asyncio import Redis
-
-TTL = int(os.environ.get("CACHE_TTL_SECONDS", 3600))
 
 
 def _key(question: str) -> str:
@@ -17,4 +14,6 @@ async def get_cached(redis: Redis, question: str) -> dict | None:
 
 
 async def set_cached(redis: Redis, question: str, response: dict) -> None:
-    await redis.setex(_key(question), TTL, json.dumps(response))
+    # No TTL — entries live until re-ingestion flushes the cache or
+    # Redis evicts under memory pressure (allkeys-lru policy)
+    await redis.set(_key(question), json.dumps(response))

@@ -191,8 +191,11 @@ Every successful query response is stored in Redis keyed by SHA-256 of the norma
 
 ```
 Cache key = SHA-256(question.lower().strip())
-TTL       = 1 hour (configurable via CACHE_TTL_SECONDS)
+Eviction  = LRU (allkeys-lru) — memory-pressure based, not time-based
+Flush     = automatic on every re-ingestion run
 ```
+
+**Why LRU over TTL:** answers go stale when code changes, not when time passes. A 1-hour TTL would evict correct answers for stable functions and keep wrong answers for recently-refactored ones. LRU keeps popular answers as long as they're valid; re-ingestion flushes everything when the codebase actually changes.
 
 If Redis is unavailable at startup, the cache is silently skipped — the pipeline continues to work normally.
 
@@ -401,7 +404,6 @@ pytest tests/
 | `ANTHROPIC_API_KEY` | Yes | Used for generation and evaluation |
 | `GITHUB_TOKEN` | Yes | Used by `fetch_repo.py` to pull issues |
 | `REDIS_URL` | No | Default: `redis://localhost:6379` |
-| `CACHE_TTL_SECONDS` | No | Default: `3600` (1 hour) |
 | `TRACER_BACKEND` | No | `phoenix` (default) or `xray` |
 | `AWS_REGION` | Prod only | For X-Ray and CloudWatch |
 | `S3_BUCKET` | Prod only | For corpus + index storage |

@@ -1,8 +1,10 @@
 from pathlib import Path
 from dotenv import load_dotenv
 import json
+import os
 import asyncio
 
+from redis.asyncio import Redis
 from ingestion.fetch_repo import clone_repo, fetch_issues, Issue
 from ingestion.chunkers import chunk_code_file, chunk_markdown_file, chunk_issue, detect_language
 from ingestion.embed_and_store import embed_and_store
@@ -94,6 +96,17 @@ async def main():
 
     print(f"\nTotal: {len(all_docs)} chunks")
     await embed_and_store(all_docs)
+
+    # Flush Redis cache — cached answers are now stale since the corpus changed
+    redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379")
+    try:
+        redis = Redis.from_url(redis_url)
+        await redis.flushdb()
+        await redis.aclose()
+        print("Cache flushed.")
+    except Exception:
+        print("Redis not reachable — cache not flushed (start Redis before querying).")
+
     print("Done.")
 
 asyncio.run(main())
