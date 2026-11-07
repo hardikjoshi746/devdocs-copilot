@@ -12,23 +12,29 @@ Why sparse retrieval?
 """
 
 from ingestion.chunkers import Document
-import pickle
+from rank_bm25 import BM25Okapi
 import json
 from pathlib import Path
 
 
-def sparse_search(query: str, n_results: int = 10) -> list[Document]:
+def sparse_search(query: str, n_results: int = 10, allowed_repos: list[str] | None = None) -> list[Document]:
     """
     Score all chunks against the query using BM25 and return the top-n.
 
+    allowed_repos: if provided, only chunks whose metadata["repo"] is in this
+    list are returned. Passes through Chroma's same repo-scoping guarantee for
+    the sparse path.
+
     No async needed — BM25 is pure CPU math, no network calls.
-    Loads the BM25 index and chunk list from disk on every call.
-    (In production this would be cached in memory at startup.)
+    Loads the tokenized corpus from JSON (safe) and rebuilds BM25Okapi
+    (deterministic — same corpus always produces the same index).
     """
-    # Load BM25 index from pickle — "rb" = read binary (pickle is binary format)
-    # Built by embed_and_store.py using the same tokenization used here
-    with Path("data/bm25.pkl").open("rb") as f:
-        bm25 = pickle.load(f)
+    # Load tokenized corpus from JSON — safe alternative to binary serialization.
+    # Deserializing an untrusted pickle file executes arbitrary Python (RCE vector).
+    # JSON has no execution surface; BM25Okapi is rebuilt from raw token lists.
+    with Path("data/bm25_corpus.json").open() as f:
+        corpus = json.load(f)
+    bm25 = BM25Okapi(corpus)
 
     # Load all chunks from JSONL — needed to map BM25 result indices back to Documents
     # BM25 works on positional indices, not ids, so we need the original ordered list
@@ -47,7 +53,27 @@ def sparse_search(query: str, n_results: int = 10) -> list[Document]:
     # inverse document frequency (how rare the token is across all chunks)
     scores = bm25.get_scores(tokenized)
 
-    # Sort indices by score descending, take top n_results
-    top_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:n_results]
+    # Apply repo filter before ranking so restricted chunks never surface.
+    # BM25 indices are positional — build a filtered view first.
+    if allowed_repos:
+        filtered = [
+            (i, chunk) for i, chunk in enumerate(chunks)
+            if chunk.metadata.get("repo") in allowed_repos
+        ]
+    else:
+        filtered = list(enumerate(chunks))
 
-    return [chunks[i] for i in top_indices]
+    if not filtered:
+        return []
+
+    original_indices = [i for i, _ in filtered]
+    filtered_chunks = [chunk for _, chunk in filtered]
+    filtered_scores = [scores[i] for i in original_indices]
+
+    top_indices = sorted(
+        range(len(filtered_scores)),
+        key=lambda i: filtered_scores[i],
+        reverse=True,
+    )[:n_results]
+
+    return [filtered_chunks[i] for i in top_indices]

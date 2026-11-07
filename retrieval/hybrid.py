@@ -24,17 +24,20 @@ from retrieval.sparse import sparse_search
 from collections import defaultdict
 
 
-async def hybrid_search(query: str, n_results: int = 10) -> list[Document]:
+async def hybrid_search(
+    query: str,
+    n_results: int = 10,
+    allowed_repos: list[str] | None = None,
+) -> list[Document]:
     """
     Run dense and sparse search, fuse results with RRF, return top-n.
 
-    Fetches 20 results from each retriever so RRF has enough candidates
-    to work with — chunks that rank well in both lists float to the top.
+    allowed_repos is threaded to both retrievers so the repo-access filter
+    is enforced at both the vector-store level (Chroma where clause) and
+    the BM25 post-filter, giving defense in depth.
     """
-    # Fetch top-20 from each retriever independently
-    # Dense is async (OpenAI API call), sparse is sync (pure CPU)
-    dense_results = await dense_search(query, n_results=20)
-    sparse_results = sparse_search(query, n_results=20)
+    dense_results = await dense_search(query, n_results=20, allowed_repos=allowed_repos)
+    sparse_results = sparse_search(query, n_results=20, allowed_repos=allowed_repos)
 
     # RRF accumulator — defaultdict(float) initializes missing keys to 0.0
     # so we can += without checking if the key exists first

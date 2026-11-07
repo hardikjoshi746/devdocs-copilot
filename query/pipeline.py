@@ -22,7 +22,7 @@ from retrieval.reranker import rerank_async
 from monitoring.tracer import span
 
 
-async def pipeline(query: str, trace_id: str = None) -> list[Document]:
+async def pipeline(query: str, allowed_repos: list[str] | None = None, trace_id: str = None) -> list[Document]:
     """
     Run the full retrieval pipeline and return top-5 most relevant chunks.
 
@@ -39,7 +39,7 @@ async def pipeline(query: str, trace_id: str = None) -> list[Document]:
 
     # Step 2: Hybrid search — dense + BM25 + RRF fusion → top 20 candidates
     with span(trace_id, "hybrid_search"):
-        response = await hybrid_search(query=hyde_response)
+        response = await hybrid_search(query=hyde_response, allowed_repos=allowed_repos)
 
     # Step 3: Rerank — cross-encoder scores all 20 (query, chunk) pairs jointly → top 5
     # Uses original query here so reranker judges relevance to what user actually asked

@@ -20,6 +20,7 @@ if not _repos_env:
 REPOS: list[dict] = json.loads(_repos_env)
 
 CODE_EXTENSIONS = {".py", ".js", ".jsx", ".ts", ".tsx", ".java"}
+IGNORE_DIRS = {"node_modules", ".git", "__pycache__", ".venv", "dist", "build", ".next"}
 
 
 async def ingest_repo(slug: str, name: str, src_dirs: list[str], base_dir: Path, pull: bool = False) -> list:
@@ -61,6 +62,8 @@ async def ingest_repo(slug: str, name: str, src_dirs: list[str], base_dir: Path,
         for path in walk_dir.rglob("*"):
             if not path.is_file():
                 continue
+            if any(part in IGNORE_DIRS for part in path.parts):
+                continue
 
             ext = path.suffix.lower()
 
@@ -78,6 +81,13 @@ async def ingest_repo(slug: str, name: str, src_dirs: list[str], base_dir: Path,
 
     # 4. Chunk issues
     docs += chunk_issue(issues)
+
+    # Stamp repo on every chunk — markdown and issue chunks don't get it from
+    # the chunker, but the Chroma where-filter and sparse post-filter both rely
+    # on metadata["repo"] being present for per-tenant access control.
+    for doc in docs:
+        if "repo" not in doc.metadata:
+            doc.metadata["repo"] = name
 
     print(f"  [{name}] {len(docs)} chunks  ({len(issues)} issues)")
     return docs

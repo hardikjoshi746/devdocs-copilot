@@ -5,7 +5,6 @@ from openai import AsyncOpenAI
 import chromadb
 from rank_bm25 import BM25Okapi
 from pathlib import Path
-import pickle
 import json
 import hashlib
 
@@ -105,10 +104,14 @@ async def embed_and_store(documents: list[Document]) -> bool:
 
     # Pickle serializes the BM25 object to bytes so it can be loaded instantly
     # on startup without rebuilding from scratch. "wb" = write binary (pickle output).
-    bm25_path = Path("data/bm25.pkl")
+    # Serialize the tokenized corpus as JSON instead of pickling the BM25 object.
+    # pickle.load() on an untrusted file is an RCE vector — JSON is safe.
+    # sparse.py rebuilds BM25Okapi(corpus) at load time; it's deterministic so
+    # the resulting index is identical to what pickle would have restored.
+    bm25_path = Path("data/bm25_corpus.json")
     bm25_path.parent.mkdir(parents=True, exist_ok=True)
-    with bm25_path.open("wb") as f:
-        pickle.dump(bm25, f)
+    with bm25_path.open("w") as f:
+        json.dump(tokenized, f)
 
     # Save raw chunks as JSONL (one JSON object per line).
     # JSONL chosen over a single JSON array because:

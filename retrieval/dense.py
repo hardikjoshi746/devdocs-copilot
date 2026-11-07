@@ -21,7 +21,7 @@ load_dotenv()
 _openai_client = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 
-async def dense_search(query: str, n_results: int = 10) -> list[Document]:
+async def dense_search(query: str, n_results: int = 10, allowed_repos: list[str] | None = None) -> list[Document]:
     """
     Embed the query and find the top-n most similar chunks in Chroma.
 
@@ -42,11 +42,15 @@ async def dense_search(query: str, n_results: int = 10) -> list[Document]:
     chroma_client = chromadb.PersistentClient(path="data/chroma")
     collection = chroma_client.get_or_create_collection("devdocs")
 
-    # query_embeddings is a list of vectors (one per query)
-    # Chroma computes cosine similarity and returns top n_results
+    # Build the repo filter — enforced at the vector-store level so restricted
+    # chunks are never returned regardless of similarity score.
+    # None / empty list = no filter (single-repo or internal access).
+    where = {"repo": {"$in": allowed_repos}} if allowed_repos else None
+
     results = collection.query(
         query_embeddings=[vector],
-        n_results=n_results
+        n_results=n_results,
+        where=where,
     )
 
     # Chroma returns parallel nested lists — [0] because we sent one query
