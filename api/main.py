@@ -309,12 +309,11 @@ async def query(
 
     # 4. Mask PII in the final answer and citation sources before returning.
     # Citations include source file paths and chunk IDs — these could expose
-    # contributor emails or internal paths embedded in issue-derived chunk IDs.
+    # Mask PII in the generated answer only — citation sources are internal
+    # file paths and chunk IDs, never user data, so masking them is incorrect
+    # (Presidio's URL recognizer false-positives on path separators).
     safe_answer = mask_pii(filtered_answer)
-    safe_citations = [
-        {**c, "source": mask_pii(c["source"])}
-        for c in result["citations"]
-    ]
+    safe_citations = result["citations"]
 
     response = QueryResponse(
         answer=safe_answer,
