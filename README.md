@@ -533,8 +533,8 @@ The app uses JWT Bearer token auth passed via the Authorization header...
 ### Step 1 — Clone the repo
 
 ```bash
-git clone https://github.com/hardikjoshi746/adRag.git
-cd adRag
+git clone https://github.com/hardikjoshi746/devdocs-copilot.git
+cd devdocs-copilot
 ```
 
 ---
