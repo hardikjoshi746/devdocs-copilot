@@ -517,37 +517,232 @@ The app uses JWT Bearer token auth passed via the Authorization header...
 
 ## Getting Started
 
+### Prerequisites
+
+| Requirement | Version | Notes |
+|---|---|---|
+| Python | 3.11+ | Check with `python3 --version` |
+| Redis | 7+ | Used for rate limiting and answer cache |
+| Git | any | Used to clone target repos during ingestion |
+| OpenAI API key | — | For embeddings (`text-embedding-3-small`) |
+| Anthropic API key | — | For generation (Sonnet 4.6) and evaluation (Haiku 4.5) |
+| GitHub token | — | For fetching issues from target repos |
+
+---
+
+### Step 1 — Clone the repo
+
 ```bash
-# 1. Install dependencies
-pip install -e ".[dev]"
-# or, if you use uv (uv.lock is included):
-# uv sync
-
-# 2. Configure
-cp .env.example .env
-# Required: OPENAI_API_KEY, ANTHROPIC_API_KEY, GITHUB_TOKEN
-# Required: JWT_SIGNING_SECRET — generate with:
-#   python3 -c "import secrets; print(secrets.token_hex(32))"
-# Optional: REDIS_URL (default: redis://localhost:6379), RATE_LIMIT_FAIL_CLOSED (default: false)
-
-# 3. Start Redis (macOS)
-brew install redis && brew services start redis
-
-# 4. Add repos to REPOS list in ingestion/run_ingestion.py, then ingest
-python -m ingestion.run_ingestion
-
-# Re-ingest after new commits (only changed chunks are re-embedded)
-python -m ingestion.run_ingestion --pull
-
-# 5. Run the API
-uvicorn api.main:app --reload
-
-# 6. Query
-curl -s -X POST http://localhost:8000/query -H "Content-Type: application/json" -d '{"question": "How does authentication work in this app?"}'
-
-# 7. Run tests
-pytest tests/
+git clone https://github.com/hardikjoshi746/adRag.git
+cd adRag
 ```
+
+---
+
+### Step 2 — Create a virtual environment and install dependencies
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+
+pip install -e ".[dev]"
+```
+
+Or with [uv](https://docs.astral.sh/uv/) (faster, lock file included):
+
+```bash
+uv sync
+source .venv/bin/activate
+```
+
+---
+
+### Step 3 — Configure environment variables
+
+```bash
+cp .env.example .env
+```
+
+Open `.env` and fill in the required values:
+
+```bash
+# API keys
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+GITHUB_TOKEN=ghp_...
+
+# JWT signing secret — generates a secure random secret
+JWT_SIGNING_SECRET=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+
+# Repos to ingest — add as many as you like
+REPOS=[{"slug": "tiangolo/fastapi", "name": "fastapi", "src_dirs": ["fastapi", "docs/en/docs"]}]
+```
+
+**Getting API keys:**
+- OpenAI: [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
+- Anthropic: [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys)
+- GitHub token: [github.com/settings/tokens](https://github.com/settings/tokens) → Fine-grained → `read:issues` + `read:contents`
+
+---
+
+### Step 4 — Start Redis
+
+**macOS:**
+```bash
+brew install redis
+brew services start redis
+```
+
+**Linux:**
+```bash
+sudo apt install redis-server
+sudo systemctl start redis
+```
+
+**Docker (any platform):**
+```bash
+docker run -d -p 6379:6379 redis:7
+```
+
+Verify Redis is running:
+```bash
+redis-cli ping   # should return: PONG
+```
+
+---
+
+### Step 5 — Ingest your repos
+
+This clones each repo in `REPOS`, chunks all source files and issues, embeds them, and stores them in Chroma + BM25.
+
+```bash
+python -m ingestion.run_ingestion
+```
+
+Expected output:
+```
+Cloning tiangolo/fastapi → data/raw/repos/fastapi
+Fetching issues for tiangolo/fastapi...
+Chunking Python files...
+Chunking Markdown files...
+Chunking issues...
+Embedded 3842 chunks (0 unchanged, 0 deleted)
+```
+
+After pulling new commits, re-ingest (only changed chunks are re-embedded — ~$0 cost on most runs):
+```bash
+python -m ingestion.run_ingestion --pull
+```
+
+---
+
+### Step 6 — Issue a JWT token
+
+Every `/query` request requires a signed Bearer token. Issue one for yourself:
+
+```bash
+python3 - <<'EOF'
+import jwt, os, time
+from dotenv import load_dotenv
+load_dotenv()
+
+token = jwt.encode(
+    {
+        "sub": "me",
+        "repos": ["fastapi"],          # must match repo names in REPOS
+        "exp": int(time.time()) + 86400 * 30,  # 30 days
+    },
+    os.environ["JWT_SIGNING_SECRET"],
+    algorithm="HS256",
+)
+print(token)
+EOF
+```
+
+Save the printed token — you'll use it in every request.
+
+---
+
+### Step 7 — Start the API
+
+```bash
+uvicorn api.main:app --reload
+```
+
+Confirm it's running:
+```bash
+curl http://localhost:8000/health
+# → {"status": "ok"}
+```
+
+---
+
+### Step 8 — Query the API
+
+```bash
+TOKEN="<paste your token here>"
+
+curl -s -X POST http://localhost:8000/query \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"question": "How does dependency injection work in FastAPI?"}' \
+  | python3 -m json.tool
+```
+
+Example response:
+```json
+{
+  "answer": "FastAPI's dependency injection uses `Depends()`. You declare a function...",
+  "citations": [
+    {"chunk_id": "fastapi::fastapi/dependencies.py::Dependant", "source": "fastapi/dependencies.py"},
+    {"chunk_id": "fastapi::docs/en/docs/tutorial/dependencies.md::Dependencies", "source": "docs/en/docs/tutorial/dependencies.md"}
+  ],
+  "retrieval_quality": "GOOD"
+}
+```
+
+---
+
+### Step 9 — (Optional) Connect to Claude Code via MCP
+
+This lets Claude Code answer your codebase questions automatically without leaving your session.
+
+```bash
+# Register the MCP server (one-time)
+claude mcp add devdocs-copilot -- python /path/to/adRag/mcp__server.py
+```
+
+The API must be running (`uvicorn api.main:app`). Then in any Claude Code session:
+
+```
+> how does authentication work in this app?
+> where is rate limiting implemented?
+> how does the frontend call the backend API?
+```
+
+Claude Code shows "Using tool: query_codebase" and returns a cited answer grounded in your source code.
+
+---
+
+### Step 10 — (Optional) Run the test suite
+
+```bash
+pytest tests/                    # all tests
+pytest tests/test_security.py    # security tests only
+pytest tests/ -v                 # verbose output
+```
+
+---
+
+### Step 11 — (Optional) Run security evals
+
+```bash
+python -m eval.run_security_evals                # injection + PII evals (~$0.10)
+python -m eval.run_security_evals --eval injection
+python -m eval.run_security_evals --limit 5      # quick smoke test (5 cases each)
+```
+
+---
 
 ### Environment Variables
 
