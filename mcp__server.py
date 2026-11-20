@@ -1,7 +1,12 @@
 import httpx
+import os
 from mcp.server.mcpserver import MCPServer
+from dotenv import load_dotenv
 
-DEVDOCS_URL = "http://localhost:8000"
+load_dotenv()
+
+DEVDOCS_URL = os.environ.get("DEVDOCS_URL", "http://localhost:8000")
+DEVDOCS_TOKEN = os.environ.get("DEVDOCS_TOKEN", "")
 
 mcp = MCPServer("devdocs-copilot")
 
@@ -9,11 +14,13 @@ mcp = MCPServer("devdocs-copilot")
 @mcp.tool()
 async def query_codebase(question: str) -> str:
     """Answer questions about the indexed codebase. Use this whenever the developer asks how something works, where something is defined, or how two parts of the code connect."""
+    headers = {"Authorization": f"Bearer {DEVDOCS_TOKEN}"} if DEVDOCS_TOKEN else {}
     async with httpx.AsyncClient(timeout=60) as client:
         try:
             response = await client.post(
                 f"{DEVDOCS_URL}/query",
-                json={"question": question}
+                json={"question": question},
+                headers=headers,
             )
 
             if response.status_code == 503:
