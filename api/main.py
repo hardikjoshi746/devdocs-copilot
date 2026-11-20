@@ -1,11 +1,12 @@
 import json
 import os
 import time
+import hashlib
 from pathlib import Path
 from contextlib import asynccontextmanager
 
 import jwt as pyjwt
-from fastapi import FastAPI, Depends, HTTPException, Security
+from fastapi import FastAPI, Depends, HTTPException, Security, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from fastapi.responses import JSONResponse
@@ -55,6 +56,32 @@ app = FastAPI(lifespan=lifespan)
 
 
 # ---------------------------------------------------------------------------
+# HTTP security headers — applied to every response
+# ---------------------------------------------------------------------------
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    # X-XSS-Protection: 0 — modern browsers use CSP; the legacy header can
+    # introduce vulnerabilities in older browsers when set to "1; mode=block"
+    response.headers["X-XSS-Protection"] = "0"
+    return response
+
+
+# ---------------------------------------------------------------------------
+# Global exception handler — prevents stack traces leaking to callers
+# ---------------------------------------------------------------------------
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    log("unhandled_exception", error_type=type(exc).__name__)
+    return JSONResponse(status_code=500, content={"error": "internal_server_error"})
+
+
+# ---------------------------------------------------------------------------
 # Parent-chunk index (built once at startup)
 # ---------------------------------------------------------------------------
 
@@ -100,10 +127,11 @@ async def verify_token(
 ) -> tuple[str, list[str]]:
     """
     Verify the Bearer JWT and return (sub, allowed_repos).
-    Raises HTTP 401 on missing / invalid / expired tokens.
+    Raises HTTP 401 on missing / invalid / expired / revoked tokens.
     Raises HTTP 503 if JWT_SIGNING_SECRET is not configured (fail closed).
     """
     if not credentials:
+        log("auth_failure", reason="missing_header")
         raise HTTPException(
             status_code=401,
             detail="Authorization header required (Bearer <token>)",
@@ -123,15 +151,27 @@ async def verify_token(
             algorithms=["HS256"],
         )
     except pyjwt.ExpiredSignatureError:
+        log("auth_failure", reason="expired_token")
         raise HTTPException(status_code=401, detail="Token expired")
     except pyjwt.InvalidTokenError:
+        log("auth_failure", reason="invalid_token")
         raise HTTPException(status_code=401, detail="Invalid token")
 
     sub = payload.get("sub", "unknown")
     repos = payload.get("repos", [])
 
     if not isinstance(repos, list) or not all(isinstance(r, str) for r in repos):
+        log("auth_failure", reason="invalid_repos_claim", sub=sub)
         raise HTTPException(status_code=401, detail="Invalid repos claim in token")
+
+    # Revocation check — token hash stored in Redis set "revoked_tokens".
+    # Add a token: redis-cli sadd revoked_tokens <sha256(raw_token)>
+    # Tokens not in the set (or Redis unavailable) are allowed through.
+    if _redis:
+        token_hash = hashlib.sha256(credentials.credentials.encode()).hexdigest()
+        if await _redis.sismember("revoked_tokens", token_hash):
+            log("auth_failure", reason="revoked_token", sub=sub)
+            raise HTTPException(status_code=401, detail="Token has been revoked")
 
     return sub, repos
 
@@ -180,6 +220,11 @@ return allowed
 _BUCKET_CAPACITY = 10
 _BUCKET_RATE = 1 / 6  # tokens per second
 
+# When True, requests are rejected (503) if Redis is unavailable instead of
+# silently skipping rate limiting. Set RATE_LIMIT_FAIL_CLOSED=true in .env
+# for environments where rate limiting must always be enforced.
+_RATE_LIMIT_FAIL_CLOSED = os.environ.get("RATE_LIMIT_FAIL_CLOSED", "false").lower() == "true"
+
 
 async def _check_rate_limit(sub: str, redis: Redis) -> None:
     allowed = await redis.eval(
@@ -220,6 +265,8 @@ async def query(
     # 2. Rate limiting — token bucket per tenant
     if _redis:
         await _check_rate_limit(sub, _redis)
+    elif _RATE_LIMIT_FAIL_CLOSED:
+        raise HTTPException(status_code=503, detail="Rate limiting unavailable")
 
     # 3. Cache check — keyed by (question, repos) to prevent cross-tenant hits
     if _redis:
@@ -260,12 +307,18 @@ async def query(
         with span(trace_id, "check_faithfulness"):
             filtered_answer = await check_faithfulness(result["answer"], docs)
 
-    # 4. Mask PII in the final answer before returning to caller
+    # 4. Mask PII in the final answer and citation sources before returning.
+    # Citations include source file paths and chunk IDs — these could expose
+    # contributor emails or internal paths embedded in issue-derived chunk IDs.
     safe_answer = mask_pii(filtered_answer)
+    safe_citations = [
+        {**c, "source": mask_pii(c["source"])}
+        for c in result["citations"]
+    ]
 
     response = QueryResponse(
         answer=safe_answer,
-        citations=result["citations"],
+        citations=safe_citations,
         retrieval_quality=quality,
     )
 

@@ -1,12 +1,46 @@
 from dataclasses import asdict
 from ingestion.chunkers import Document
 import os
+import re
 from openai import AsyncOpenAI
 import chromadb
 from rank_bm25 import BM25Okapi
 from pathlib import Path
 import json
 import hashlib
+
+# ---------------------------------------------------------------------------
+# Ingestion-time injection scanner
+#
+# Flags chunks whose content contains known prompt injection patterns before
+# they are embedded and stored. We warn rather than drop — dropping causes
+# silent data loss and the runtime defenses (XML delimiters, canary token)
+# handle poisoned chunks at query time. The warnings surface compromised
+# repos or malicious PRs during the ingestion run so they can be investigated.
+# ---------------------------------------------------------------------------
+
+_CHUNK_INJECTION_RE = re.compile(
+    r"ignore\s+(previous|all|prior|above)(\s+\w+)?\s+(instructions?|prompts?|context|rules?|system)|"
+    r"note\s+to\s+(ai|claude|assistant|language\s+model)|"
+    r"dear\s+(claude|ai|assistant)|"
+    r"attention\s+(language\s+model|ai\s+assistant|claude)|"
+    r"PROMPT_OVERRIDE|AI_TASK=|AI_INSTRUCTION:|AI_DIRECTIVE|"
+    r"<\/?(system|instruction)\s*>|"
+    r"\[INST\]|<<SYS>>",
+    re.IGNORECASE,
+)
+
+
+def _flag_suspicious_chunks(documents: list[Document]) -> None:
+    """
+    Scan all chunks for injection patterns and print warnings.
+    Does not drop or modify chunks — runtime defenses remain the enforcement layer.
+    """
+    flagged = [doc for doc in documents if _CHUNK_INJECTION_RE.search(doc.content)]
+    if flagged:
+        print(f"\nWARNING: {len(flagged)} chunk(s) contain potential injection patterns:")
+        for doc in flagged:
+            print(f"  source={doc.source!r}  id={doc.id!r}")
 
 def _content_hash(content: str) -> str:
     return hashlib.sha256(content.encode()).hexdigest()
@@ -25,6 +59,9 @@ async def embed_and_store(documents: list[Document]) -> bool:
     - chunks.jsonl is the checkpoint: if we change the embedding model we can
       re-embed from here without re-running the chunkers (expensive AST parsing).
     """
+    # Warn about chunks that contain injection patterns before storing them.
+    _flag_suspicious_chunks(documents)
+
     client = AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
     # PersistentClient saves the vector store to disk automatically.

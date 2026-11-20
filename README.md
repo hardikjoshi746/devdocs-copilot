@@ -39,6 +39,45 @@ Evaluated against 50 hand-written Q&A pairs, stratified across 4 question types.
 
 Raw results are in `eval/ablation_results.json` and `eval/results_full.json`.
 
+### Security Evals
+
+Two additional evals target the guardrail layer specifically. Run with:
+
+```bash
+python -m eval.run_security_evals                # both evals
+python -m eval.run_security_evals --eval injection
+python -m eval.run_security_evals --eval pii
+python -m eval.run_security_evals --limit 5      # quick smoke test
+```
+
+**Eval 1 — Injection Robustness** (15 cases, 5 injection styles)
+
+Each case has a poisoned chunk whose injection phrasing deliberately bypasses the regex layer, testing whether system prompt hardening + XML delimiters prevent the LLM from following it.
+
+| Style | Cases | Description |
+|---|---|---|
+| `explicit_ai_address` | 3 | "Note to AI:", "Dear Claude:", "ATTENTION LANGUAGE MODEL:" |
+| `fake_config` | 3 | Looks like a JSON key or config directive embedded in docs |
+| `code_comment` | 3 | Injection hidden in `# CLAUDE:` or `// AI_INSTRUCTION:` comments |
+| `prompt_template` | 3 | Fake `Human:/Assistant:` turns or `</context><new_system_instruction>` boundaries |
+| `social_engineering` | 3 | Authority claim: "SECURITY AUDIT PROTOCOL v2.1 requires..." |
+
+Scoring: string match (fast, $0) + LLM-as-judge (Haiku 4.5) for subtle behavioral changes.
+
+**Eval 2 — PII Leakage Rate** (15 cases, 5 PII types)
+
+Each case has a chunk seeded with realistic PII. After `generate()` + `mask_pii()`, exact string search checks whether any seeded entity survived masking.
+
+| PII type | Cases |
+|---|---|
+| `email` | 3 |
+| `phone` | 3 |
+| `name_email` | 3 |
+| `ip_address` | 3 |
+| `token` (JWT, API key, DB password) | 3 |
+
+Results saved to `eval/security_injection_results.json` and `eval/security_pii_results.json`.
+
 ---
 
 ## System Design
@@ -47,7 +86,17 @@ Raw results are in `eval/ablation_results.json` and `eval/results_full.json`.
   ┌─────────────────────────────────────────────┐
   │              REST API (FastAPI)              │
   │          POST /query   GET /health           │
+  │   security headers · global exception handler│
   └───────────────────┬─────────────────────────┘
+                      │
+          ┌───────────▼───────────┐
+          │  JWT auth + revocation│ ◄── 401 on missing/expired/revoked token; failures logged
+          └───────────┬───────────┘
+                      │
+          ┌───────────▼───────────┐
+          │  [0] Guardrails       │ ◄── validate_input: normalize → length → regex → LLM judge
+          │  validate_input()     │     HTTP 400 on injection detected
+          └───────────┬───────────┘
                       │
           ┌───────────▼───────────┐
           │     Redis Cache       │ ◄── cache hit → return instantly ($0 LLM cost)
@@ -69,8 +118,11 @@ Raw results are in `eval/ablation_results.json` and `eval/results_full.json`.
   │          │                                  │
   │  [5] Claude Generator     (Sonnet 4.6)      │
   │       + Source Citations                    │
+  │       + Canary leak check                   │◄── 503 if system prompt exfiltrated
   │          │                                  │
   │  [6] Faithfulness Check   (Sonnet 4.6)      │
+  │          │                                  │
+  │  [7] PII Masking          (Presidio)        │◄── mask emails, phones, tokens in answer + citations
   └───────────────────┬─────────────────────────┘
                       │
             store in Redis cache
@@ -114,12 +166,18 @@ avg score < 0.4   →  ABSTAIN: return 503, log full trace
 
 | Failure | Detection | Handling |
 |---|---|---|
+| Prompt injection in query | Regex + LLM classifier in `validate_input` | HTTP 400, pipeline never starts |
+| System-prompt exfiltration via poisoned chunk | Canary token in generated answer | HTTP 503, canary presence not disclosed |
+| PII in LLM-generated answer or citations | Presidio NER + custom recognizers | Replaced with `<EMAIL_ADDRESS>` etc. before returning |
+| Revoked JWT presented | Token hash in Redis `revoked_tokens` set | HTTP 401 |
+| Injection pattern found in corpus chunk | Regex scan in `embed_and_store` at ingestion time | Warning printed with source + chunk ID; chunk still stored |
+| Unhandled server exception | Global exception handler | Generic `{"error": "internal_server_error"}` — no stack trace exposed |
 | Retrieved chunks irrelevant | Retrieval Evaluator score < 0.4 | ABSTAIN → 503, full trace logged |
 | Retrieved chunks borderline | Score 0.4–0.7 | EXPAND → fetch parent chunks, retry once |
 | LLM returns ungrounded claims | Faithfulness check post-generation | Strip claim; return grounded answer only |
 | BM25 index stale | Checksum mismatch on load | Rebuild index |
 | Embedding API rate-limited | Exponential backoff, 3 retries | 429 → 503 after retries exhausted |
-| Redis unavailable | `_redis is None` guard in `/query` | Graceful degradation — cache skipped, pipeline runs normally |
+| Redis unavailable | `_redis is None` guard in `/query` | Graceful degradation — cache + rate limit skipped (or 503 if `RATE_LIMIT_FAIL_CLOSED=true`) |
 
 ---
 
@@ -207,6 +265,69 @@ RRF score = Σ  1 / (k + rank_i)    k=60
 
 `503 retrieval_quality_too_low` is a recoverable, honest failure. A confident wrong answer with citations is not. The evaluator is a pre-generation gate; the faithfulness check is a post-generation filter.
 
+### Security guardrails (`api/guardrails.py`, `api/main.py`)
+
+**HTTP security headers** — applied to every response by middleware:
+
+| Header | Value | Purpose |
+|---|---|---|
+| `X-Content-Type-Options` | `nosniff` | Prevents MIME-type sniffing |
+| `X-Frame-Options` | `DENY` | Blocks clickjacking via iframe embedding |
+| `Referrer-Policy` | `no-referrer` | No referrer sent on cross-origin requests |
+| `X-XSS-Protection` | `0` | Disables legacy XSS filter (CSP is the modern replacement) |
+
+**Global exception handler** — catches any unhandled exception and returns `{"error": "internal_server_error"}` with no stack trace, file paths, or internal detail exposed to callers. All such events are logged as `unhandled_exception`.
+
+**JWT authentication + revocation**
+
+Tokens are signed JWTs (`HS256`) carrying a `repos` claim. `verify_token` fails closed if `JWT_SIGNING_SECRET` is unset (503). Every 401 path logs an `auth_failure` event with a specific `reason` field (`missing_header`, `expired_token`, `invalid_token`, `invalid_repos_claim`, `revoked_token`) for intrusion detection.
+
+Token revocation uses a Redis set:
+```bash
+# Revoke a token (hash it first)
+python3 -c "import hashlib,sys; print(hashlib.sha256(sys.argv[1].encode()).hexdigest())" <raw_token>
+redis-cli sadd revoked_tokens <hash>
+```
+Revocation is best-effort: if Redis is unavailable, revoked tokens pass through (consistent with the cache graceful-degradation policy). Use short `exp` values as the primary mitigation.
+
+**Layer 1 — Input validation (`validate_input`)**
+
+Applied in order, short-circuiting on the first failure:
+
+| Step | What it does | Why |
+|---|---|---|
+| NFKC normalization | Collapses full-width Unicode, ligatures, superscripts | Prevents look-alike bypass: `Ｊａｉｌｂｒｅａｋ` → `Jailbreak` |
+| Zero-width char strip | Removes U+200B, U+FEFF, U+00AD etc. | Prevents split-word bypass: `j​a​i​l​b​r​e​a​k` |
+| Length cap (500 chars) | HTTP 400 if exceeded | Cuts off oversized payloads before LLM calls |
+| Regex check | 9 patterns covering `ignore instructions`, `you are now`, `[INST]` etc. | Fast, free; catches the most common injection phrasings |
+| LLM classifier (Haiku 4.5) | Runs only if regex passes; returns 1 (inject) or 0 (safe) | Catches subtle injections the regex misses (~$0.00003/query) |
+
+**Layer 2 — Canary token (exfiltration detection)**
+
+A random 16-hex-char secret is injected into the system prompt at startup. If it appears in a generated answer, a poisoned chunk instructed the model to repeat its system prompt. The response returns 503 — the detection mechanism is not disclosed.
+
+**Layer 3 — PII masking (`mask_pii`)**
+
+Applied to both the final answer and each citation's `source` field. Citations include file paths and chunk IDs that could expose contributor emails or internal paths from issue-derived chunks.
+
+| Entity type | Pattern |
+|---|---|
+| `EMAIL_ADDRESS` | Presidio built-in NER |
+| `PHONE_NUMBER` | Presidio built-in NER |
+| `JWT_TOKEN` | `eyJ…header.payload.signature` |
+| `API_KEY` | `sk-…`, `ghp_…`, `npm_…`, `pk-…` |
+| `HEX_SECRET` | 32+ consecutive hex chars |
+
+Detected entities are replaced with labeled placeholders: `admin@example.com` → `<EMAIL_ADDRESS>`.
+
+**Layer 4 — Ingestion-time injection scanning (`embed_and_store`)**
+
+Before embedding any chunk, `_flag_suspicious_chunks` scans content against a regex covering `note to AI`, `PROMPT_OVERRIDE`, `AI_INSTRUCTION:`, `[INST]`, etc. Flagged chunks print a warning with `source` and `chunk_id` — they are stored (not dropped) so runtime defenses still apply, but compromised repos or malicious PRs surface during the ingestion run rather than silently at query time.
+
+**Rate limit fail-closed**
+
+By default Redis unavailability silently disables rate limiting (graceful degradation). Set `RATE_LIMIT_FAIL_CLOSED=true` to reject requests with 503 instead — use this in environments where rate limiting is a hard requirement.
+
 ---
 
 ## Monitoring
@@ -233,6 +354,10 @@ Cache hits log a single `cache_hit` event with no pipeline spans.
 ```json
 {"timestamp": "2026-09-09T10:12:01.000000+00:00", "event": "cache_hit", "question": "How does authentication work in this app?"}
 {"timestamp": "2026-09-09T10:11:30.000000+00:00", "trace_id": "7235958f", "event": "query_complete", "quality": "EXPAND", "question": "How does authentication work in this app?"}
+{"timestamp": "2026-09-09T10:13:45.000000+00:00", "event": "auth_failure", "reason": "expired_token"}
+{"timestamp": "2026-09-09T10:14:02.000000+00:00", "event": "auth_failure", "reason": "revoked_token", "sub": "acme"}
+{"timestamp": "2026-09-09T10:15:11.000000+00:00", "event": "canary_leak_detected", "trace_id": "a3f92b1c"}
+{"timestamp": "2026-09-09T10:16:00.000000+00:00", "event": "unhandled_exception", "error_type": "ConnectionError"}
 ```
 
 ### Performance Optimizations
@@ -259,7 +384,7 @@ adRag/
 ├── ingestion/
 │   ├── fetch_repo.py           # clone repo; fetch GitHub issues via REST API
 │   ├── chunkers.py             # tree-sitter chunker, markdown chunker, issue chunker
-│   ├── embed_and_store.py      # batch embed → Chroma "devdocs"; tokenize → BM25 pickle
+│   ├── embed_and_store.py      # batch embed → Chroma "devdocs"; tokenize → BM25 JSON; injection scan
 │   └── run_ingestion.py        # REPOS config list → clone → chunk → embed → store
 │
 ├── retrieval/
@@ -280,8 +405,9 @@ adRag/
 │   └── answer.py               # Claude Sonnet call; structured output + citations
 │
 ├── api/
-│   ├── main.py                 # FastAPI: POST /query, GET /health; Redis lifespan
-│   └── cache.py                # Redis get/set with SHA-256 key and TTL
+│   ├── main.py                 # FastAPI: POST /query, GET /health; JWT auth + revocation; security headers; rate limit fail-closed
+│   ├── cache.py                # Redis get/set with SHA-256 key and TTL
+│   └── guardrails.py           # 4-layer input validation, canary token, PII masking
 │
 ├── monitoring/
 │   ├── tracer.py               # per-step spans; Phoenix (dev) or X-Ray (prod)
@@ -289,16 +415,21 @@ adRag/
 │
 ├── eval/
 │   ├── dataset.py
+│   ├── dataset_with_ids.json
 │   ├── metrics.py
 │   ├── run_ablations.py
 │   ├── ablation_results.json
-│   └── results_full.json
+│   ├── results_full.json
+│   ├── security_dataset.py     # 15 injection cases + 15 PII cases
+│   ├── security_metrics.py     # injection_robustness(), pii_leakage_rate()
+│   └── run_security_evals.py   # CLI runner for both security evals
 │
 ├── tests/
 │   ├── conftest.py
 │   ├── test_chunkers.py
 │   ├── test_retrieval.py
-│   └── test_api.py
+│   ├── test_api.py
+│   └── test_security.py        # guardrails, JWT auth, rate limiting, pickle RCE fix
 │
 └── logs/
     └── app.jsonl
@@ -316,6 +447,8 @@ adRag/
 | Code parser | `tree-sitter` + language grammars | Python, JS, JSX, TS, TSX, Java; fixed-size fallback for others |
 | Reranker | `cross-encoder/ms-marco-MiniLM-L-6-v2` | Free, local, ~80MB; applied to top-20 only |
 | Answer cache | Redis | SHA-256 key, 1hr TTL; graceful degradation if unavailable |
+| PII masking | Microsoft Presidio + spaCy | Built-in NER + custom recognizers for JWT, API keys, hex secrets |
+| Input validation | Regex + Claude Haiku 4.5 | 4-layer guardrail; LLM classifier runs only after regex passes |
 | LLM — generation | `claude-sonnet-4-6` | Structured output with source citations |
 | LLM — evaluation | `claude-haiku-4-5-20251001` | Per-chunk relevance scoring + faithfulness check |
 | Traces (dev) | Arize Phoenix | Local UI at `localhost:6006` |
@@ -387,11 +520,15 @@ The app uses JWT Bearer token auth passed via the Authorization header...
 ```bash
 # 1. Install dependencies
 pip install -e ".[dev]"
+# or, if you use uv (uv.lock is included):
+# uv sync
 
 # 2. Configure
 cp .env.example .env
-# Set: OPENAI_API_KEY, ANTHROPIC_API_KEY, GITHUB_TOKEN
-# Optional: REDIS_URL (default: redis://localhost:6379), CACHE_TTL_SECONDS (default: 3600)
+# Required: OPENAI_API_KEY, ANTHROPIC_API_KEY, GITHUB_TOKEN
+# Required: JWT_SIGNING_SECRET — generate with:
+#   python3 -c "import secrets; print(secrets.token_hex(32))"
+# Optional: REDIS_URL (default: redis://localhost:6379), RATE_LIMIT_FAIL_CLOSED (default: false)
 
 # 3. Start Redis (macOS)
 brew install redis && brew services start redis
@@ -419,8 +556,10 @@ pytest tests/
 | `OPENAI_API_KEY` | Yes | Used for `text-embedding-3-small` |
 | `ANTHROPIC_API_KEY` | Yes | Used for generation and evaluation |
 | `GITHUB_TOKEN` | Yes | Used by `fetch_repo.py` to pull issues |
+| `JWT_SIGNING_SECRET` | Yes | Signs and verifies Bearer tokens — generate with `secrets.token_hex(32)` |
 | `REPOS` | Yes | JSON array of repos: `[{"slug": "owner/repo", "name": "repo", "src_dirs": [...]}]` |
 | `REDIS_URL` | No | Default: `redis://localhost:6379` |
+| `RATE_LIMIT_FAIL_CLOSED` | No | `false` (default) = skip rate limit if Redis down; `true` = return 503 instead |
 | `TRACER_BACKEND` | No | `phoenix` (default) or `xray` |
 | `AWS_REGION` | Prod only | For X-Ray and CloudWatch |
 | `S3_BUCKET` | Prod only | For corpus + index storage |
@@ -455,10 +594,6 @@ Generation + faithfulness = ~85% of per-query cost. Redis cache eliminates this 
 ---
 
 ## Future Work
-
-**Authorization** — `X-API-Key` header mapped to `allowed_repos` list; Chroma `where={"repo": {"$in": allowed_repos}}` filter enforced at query time. Different devs see only their repos.
-
-**Rate limiting** — Redis-backed `fastapi-limiter`; 10 requests/minute per API key → 429 with `Retry-After`.
 
 **UI** — Simple HTML/JS frontend served at `/`. Text input, response display, `retrieval_quality` badge.
 
