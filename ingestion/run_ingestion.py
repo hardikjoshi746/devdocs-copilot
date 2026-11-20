@@ -8,6 +8,7 @@ import argparse
 from redis.asyncio import Redis
 from ingestion.fetch_repo import clone_repo, pull_repo, fetch_issues, Issue
 from ingestion.chunkers import chunk_code_file, chunk_markdown_file, chunk_issue, detect_language
+from ingestion.doc_loader import load_docs_folder
 from ingestion.embed_and_store import embed_and_store
 
 load_dotenv()
@@ -111,6 +112,14 @@ async def main():
             base_dir=base_dir,
             pull=args.pull,
         )
+
+    # Load any manually added docs (PDFs, Word files, Markdown, text files)
+    # from the data/docs/ folder. Create the folder and drop files there —
+    # they're picked up automatically on the next ingestion run.
+    docs_folder = Path("data/docs")
+    if docs_folder.exists() and any(docs_folder.rglob("*")):
+        print("Loading data/docs/ folder...")
+        all_docs += await load_docs_folder(str(docs_folder), repo="")
 
     print(f"\nTotal: {len(all_docs)} chunks")
     changed = await embed_and_store(all_docs)

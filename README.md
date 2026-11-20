@@ -555,6 +555,14 @@ uv sync
 source .venv/bin/activate
 ```
 
+After installing, download the spaCy language model required by Presidio's PII detector:
+
+```bash
+python3 -m spacy download en_core_web_lg
+```
+
+> `en_core_web_lg` is ~560MB. If disk space is tight, `en_core_web_sm` (~12MB) works but has lower NER accuracy for names and organisations.
+
 ---
 
 ### Step 3 — Configure environment variables

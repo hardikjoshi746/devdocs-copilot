@@ -92,6 +92,67 @@ def _get_node_name(node, source_bytes: bytes) -> str:
     return "unknown"
 
 
+def _unwrap_to_fn_or_class(
+    node, source_bytes: bytes, fn_types: set, cls_types: set
+) -> tuple:
+    """
+    Unwrap JS/TS export and variable-declaration wrappers to find the
+    underlying function or class node.
+
+    Handles three common patterns that tree-sitter does NOT surface as
+    top-level function/class nodes:
+
+      export function Foo() {}
+      └─ export_statement > function_declaration
+
+      export class Foo {}
+      └─ export_statement > class_declaration
+
+      export const Foo = () => {}          (also works without export)
+      const Foo = () => {}
+      └─ [export_statement >] lexical_declaration > variable_declarator > arrow_function
+
+    Returns (inner_node, name_override):
+      inner_node    — the actual function/class node for type-checking, or None
+      name_override — variable name string for const/arrow patterns, or None
+                      (None means fall back to _get_node_name on inner_node)
+    """
+    target = node
+
+    # Unwrap: export <something>
+    if target.type == "export_statement":
+        sub = None
+        for child in target.children:
+            if child.type in fn_types | cls_types:
+                return child, None          # export function/class Foo
+            if child.type in ("lexical_declaration", "variable_declaration"):
+                sub = child
+                break
+        if sub is None:
+            return None, None
+        target = sub
+
+    # Unwrap: const/let Foo = () => {} or const/let Foo = function() {}
+    if target.type in ("lexical_declaration", "variable_declaration"):
+        for declarator in target.children:
+            if declarator.type != "variable_declarator":
+                continue
+            var_name = None
+            fn_node = None
+            for child in declarator.children:
+                if child.type == "identifier" and var_name is None:
+                    var_name = source_bytes[child.start_byte:child.end_byte].decode(
+                        "utf-8", errors="replace"
+                    )
+                elif child.type in fn_types and fn_node is None:
+                    fn_node = child
+            if fn_node:
+                return fn_node, (var_name or "unknown")
+        return None, None
+
+    return None, None
+
+
 def chunk_code_file(source: str, filepath: str, repo: str = "") -> list[Document]:
     """
     Parse a source file using tree-sitter and split into Document chunks at
@@ -137,14 +198,31 @@ def chunk_code_file(source: str, filepath: str, repo: str = "") -> list[Document
         return f"{base}::{seen_ids[base]}"
 
     for node in tree.root_node.children:
+        # Resolve the actual function/class node — handles direct declarations
+        # and JS/TS export/variable-declaration wrappers via _unwrap_to_fn_or_class.
         if node.type in cls_types:
-            class_name = _get_node_name(node, source_bytes)
+            inner_node, name_override = node, None
+        elif node.type in fn_types:
+            inner_node, name_override = node, None
+        else:
+            inner_node, name_override = _unwrap_to_fn_or_class(
+                node, source_bytes, fn_types, cls_types
+            )
+            if inner_node is None:
+                continue
+
+        # Use the outer node's source range as content so that
+        # `export const Foo = () => {}` includes the variable name and export
+        # keyword — giving the LLM full context, not just an anonymous function.
+        content = source_bytes[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
+
+        if inner_node.type in cls_types:
+            class_name = name_override or _get_node_name(inner_node, source_bytes)
             class_id = unique_id(f"{id_prefix}::{class_name}")
-            class_content = source_bytes[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
 
             documents.append(Document(
                 id=class_id,
-                content=class_content,
+                content=content,
                 type="code",
                 source=filepath,
                 parent_id=None,
@@ -159,12 +237,12 @@ def chunk_code_file(source: str, filepath: str, repo: str = "") -> list[Document
             # Methods inside the class — may be wrapped in a "block" or "class_body"
             # node depending on the language grammar, so we search one level deeper.
             body_nodes = []
-            for child in node.children:
+            for child in inner_node.children:
                 if child.type in ("block", "class_body"):
                     body_nodes = child.children
                     break
             else:
-                body_nodes = node.children
+                body_nodes = inner_node.children
 
             for child in body_nodes:
                 if child.type in fn_types:
@@ -184,11 +262,11 @@ def chunk_code_file(source: str, filepath: str, repo: str = "") -> list[Document
                         },
                     ))
 
-        elif node.type in fn_types:
-            fn_name = _get_node_name(node, source_bytes)
+        elif inner_node.type in fn_types:
+            fn_name = name_override or _get_node_name(inner_node, source_bytes)
             documents.append(Document(
                 id=unique_id(f"{id_prefix}::{fn_name}"),
-                content=source_bytes[node.start_byte:node.end_byte].decode("utf-8", errors="replace"),
+                content=content,
                 type="code",
                 source=filepath,
                 parent_id=None,
