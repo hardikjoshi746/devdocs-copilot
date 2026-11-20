@@ -136,7 +136,7 @@ async def _load_pdf(filepath: Path) -> str:
     Returns a markdown string with one `## Page N` section per page
     (merged pages share the first page's heading).
     """
-    import fitz  # pymupdf
+    import pymupdf as fitz
 
     doc = fitz.open(str(filepath))
     raw_pages: list[str] = []
@@ -298,6 +298,6 @@ async def load_docs_folder(
             print(f"  [docs] {len(docs):>4} chunks  ← {filepath.name}")
 
         except Exception as exc:
-            print(f"  [docs] WARNING: skipped {filepath.name} — {exc}")
+            print(f"  [docs] WARNING: skipped {filepath.name} — {exc!r}")
 
     return documents
