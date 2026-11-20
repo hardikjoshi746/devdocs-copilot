@@ -83,86 +83,45 @@ async def _describe_image(image_bytes: bytes, ext: str) -> str:
 # PDF loader
 # ---------------------------------------------------------------------------
 
-def _page_ends_in_table(text: str) -> bool:
-    """True if the last non-empty line of a page looks like a table row."""
-    for line in reversed(text.splitlines()):
-        if line.strip():
-            return line.strip().startswith("|")
-    return False
-
-
-def _page_starts_with_table(text: str) -> bool:
-    """True if the first non-empty line of a page looks like a table row."""
-    for line in text.splitlines():
-        if line.strip():
-            return line.strip().startswith("|")
-    return False
-
-
-def _merge_split_tables(pages: list[str]) -> list[str]:
-    """
-    Merge consecutive pages where a table is split across a page boundary.
-
-    When page N ends with a `|` row and page N+1 starts with a `|` row,
-    pymupdf has broken a single table across pages. We concatenate those
-    pages so the full table (including header row) stays in one chunk.
-    This prevents the vector embedding for the continuation page being
-    built from a headerless mid-table fragment.
-    """
-    if not pages:
-        return pages
-
-    merged: list[str] = [pages[0]]
-    for page_text in pages[1:]:
-        if _page_ends_in_table(merged[-1]) and _page_starts_with_table(page_text):
-            # Continuation — append to the previous page (no new heading)
-            merged[-1] = merged[-1] + "\n" + page_text
-        else:
-            merged.append(page_text)
-    return merged
-
 
 async def _load_pdf(filepath: Path) -> str:
     """
     Extract content from a PDF file.
 
-    - Text and tables: pymupdf's "markdown" output mode preserves table
-      structure as markdown pipe tables automatically.
-    - Cross-page tables: pages are merged when a table row continues across
-      a page boundary, so no chunk starts mid-table without a header row.
-    - Images: extracted per-page, described via Claude Haiku, inlined as
-      [Image N: description] after the page text.
+    - Text and tables: pymupdf4llm.to_markdown() — the official high-level API
+      for pymupdf 2.x; produces proper markdown pipe tables and respects actual
+      document headings (better chunk boundaries than artificial ## Page N).
+    - Cross-page tables: handled internally by pymupdf4llm.
+    - Images: extracted separately via the low-level pymupdf API, described by
+      Claude Haiku, and appended to the markdown as [Image N: description].
 
-    Returns a markdown string with one `## Page N` section per page
-    (merged pages share the first page's heading).
+    Returns a markdown string ready for chunk_markdown_file.
     """
-    import pymupdf as fitz
+    import pymupdf
+    import pymupdf4llm
 
-    doc = fitz.open(str(filepath))
-    raw_pages: list[str] = []
+    # to_markdown handles text + tables across the full document reliably
+    md_text = pymupdf4llm.to_markdown(str(filepath))
 
-    for page_num, page in enumerate(doc, start=1):
-        # "markdown" mode: tables → pipe tables, headings → # syntax
-        text = page.get_text("markdown").strip()
-
-        # Describe each image on this page
-        image_lines: list[str] = []
-        for img_idx, img_ref in enumerate(page.get_images(), start=1):
+    # Extract and describe images from every page
+    doc = pymupdf.open(str(filepath))
+    image_lines: list[str] = []
+    img_counter = 0
+    for page in doc:
+        for img_ref in page.get_images():
             xref = img_ref[0]
             try:
                 img_info = doc.extract_image(xref)
+                img_counter += 1
                 description = await _describe_image(img_info["image"], img_info["ext"])
-                image_lines.append(f"[Image {img_idx}: {description}]")
+                image_lines.append(f"[Image {img_counter}: {description}]")
             except Exception:
                 pass  # skip unreadable images without crashing the whole file
 
-        section = f"## Page {page_num}\n\n{text}"
-        if image_lines:
-            section += "\n\n" + "\n".join(image_lines)
-        raw_pages.append(section)
+    if image_lines:
+        md_text += "\n\n" + "\n".join(image_lines)
 
-    merged_pages = _merge_split_tables(raw_pages)
-    return "\n\n".join(merged_pages)
+    return md_text
 
 
 # ---------------------------------------------------------------------------
