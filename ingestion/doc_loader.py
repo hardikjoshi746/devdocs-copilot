@@ -23,11 +23,14 @@ embedding model itself is text-only.
 import base64
 import os
 import re
+import shutil
+import zipfile
 from pathlib import Path
 
 from anthropic import AsyncAnthropic
 
 from ingestion.chunkers import Document, _chunk_fallback, chunk_markdown_file
+from ingestion.embed_and_store import _CHUNK_INJECTION_RE
 
 # Claude vision model — haiku is fast and cheap for image descriptions.
 _VISION_MODEL = "claude-haiku-4-5-20251001"
@@ -39,6 +42,79 @@ _VISION_PROMPT = (
 
 # Extensions this loader handles. Anything else is silently skipped.
 _SUPPORTED = {".pdf", ".docx", ".md", ".txt"}
+
+# ---------------------------------------------------------------------------
+# File safety checks
+# ---------------------------------------------------------------------------
+
+# Max file size: 50 MB. Larger files are likely zip bombs or accidental drops.
+_MAX_FILE_BYTES = 50 * 1024 * 1024
+
+# Magic bytes for each binary format.
+# A file claiming to be .pdf must start with %PDF-
+# A .docx is a ZIP archive — must start with PK\x03\x04
+_MAGIC: dict[str, bytes] = {
+    ".pdf":  b"%PDF-",
+    ".docx": b"PK\x03\x04",
+}
+
+
+def _validate_file(filepath: Path) -> None:
+    """
+    Raise ValueError if the file fails any structural check.
+    Called before any parsing so corrupt or disguised files never reach
+    the parser libraries.
+
+    Checks (in order):
+      1. Not empty
+      2. Under 50 MB size cap (zip bomb / accidental large file)
+      3. Magic bytes match the declared extension
+      4. DOCX: ZIP CRC checksums verified via zipfile.testzip()
+    """
+    size = filepath.stat().st_size
+    if size == 0:
+        raise ValueError("empty file")
+    if size > _MAX_FILE_BYTES:
+        raise ValueError(f"file too large ({size / 1024 / 1024:.1f} MB > 50 MB limit)")
+
+    expected_magic = _MAGIC.get(filepath.suffix.lower())
+    if expected_magic:
+        header = filepath.read_bytes()[:len(expected_magic)]
+        if header != expected_magic:
+            raise ValueError(
+                f"magic bytes mismatch — file does not appear to be a valid "
+                f"{filepath.suffix} (got {header!r})"
+            )
+
+    # DOCX is a ZIP archive — testzip() verifies every entry's CRC checksum.
+    # Returns the name of the first bad file, or None if all entries are intact.
+    if filepath.suffix.lower() == ".docx":
+        try:
+            with zipfile.ZipFile(filepath) as zf:
+                bad_entry = zf.testzip()
+                if bad_entry:
+                    raise ValueError(f"ZIP CRC error in entry: {bad_entry!r}")
+        except zipfile.BadZipFile as exc:
+            raise ValueError(f"not a valid ZIP/DOCX archive: {exc}") from exc
+
+
+def _check_injection(docs: list[Document], filepath: Path) -> None:
+    """
+    Scan all chunks produced from a file for prompt injection patterns.
+    Raises ValueError if any chunk matches, so the caller can quarantine
+    the source file.
+
+    Why raise instead of warn: embed_and_store already warns about suspicious
+    chunks from repos (we don't control those). For the docs folder we control
+    what goes in, so a match here means someone deliberately added a poisoned
+    file — it should be quarantined, not silently stored.
+    """
+    hits = [doc for doc in docs if _CHUNK_INJECTION_RE.search(doc.content)]
+    if hits:
+        raise ValueError(
+            f"injection pattern detected in {len(hits)} chunk(s): "
+            + ", ".join(f"chunk {i}" for i, _ in enumerate(hits))
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -218,10 +294,14 @@ async def load_docs_folder(
     if not folder_path.exists():
         return []
 
+    quarantine = folder_path / "_quarantine"
     documents: list[Document] = []
 
     for filepath in sorted(folder_path.rglob("*")):
         if not filepath.is_file():
+            continue
+        # Skip files already in quarantine
+        if "_quarantine" in filepath.parts:
             continue
         if filepath.suffix.lower() not in _SUPPORTED:
             continue
@@ -230,6 +310,10 @@ async def load_docs_folder(
         str_path = str(filepath)
 
         try:
+            # Validate before any parsing — catches empty, oversized, and
+            # disguised files (e.g. a shell script renamed to .pdf)
+            _validate_file(filepath)
+
             if ext == ".pdf":
                 markdown_text = await _load_pdf(filepath)
                 docs = chunk_markdown_file(markdown_text, str_path)
@@ -249,6 +333,10 @@ async def load_docs_folder(
             else:
                 continue
 
+            # Scan chunks for injection patterns before accepting the file.
+            # Raises ValueError → triggers quarantine below if anything is found.
+            _check_injection(docs, filepath)
+
             for doc in docs:
                 doc.metadata["repo"] = repo
                 doc.metadata.setdefault("language", "doc")
@@ -257,6 +345,11 @@ async def load_docs_folder(
             print(f"  [docs] {len(docs):>4} chunks  ← {filepath.name}")
 
         except Exception as exc:
-            print(f"  [docs] WARNING: skipped {filepath.name} — {exc!r}")
+            # Move the bad file to data/docs/_quarantine/ so it doesn't block
+            # future runs and is preserved for investigation.
+            quarantine.mkdir(exist_ok=True)
+            dest = quarantine / filepath.name
+            shutil.move(str(filepath), str(dest))
+            print(f"  [docs] QUARANTINED {filepath.name} → _quarantine/ — {exc!r}")
 
     return documents
