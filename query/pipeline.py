@@ -34,16 +34,20 @@ async def pipeline(query: str, allowed_repos: list[str] | None = None, trace_id:
     """
     # Step 1: HyDE — generate a fake answer to use as the retrieval query
     # The fake answer uses FastAPI vocabulary, so it embeds closer to real chunks
-    with span(trace_id, "rewrite"):
+    with span(trace_id, "rewrite") as s:
         hyde_response = await rewrite(query=query)
+        s["metadata"]["query"] = query
+        s["metadata"]["hyde_response"] = hyde_response[:200]
 
     # Step 2: Hybrid search — dense + BM25 + RRF fusion → top 20 candidates
-    with span(trace_id, "hybrid_search"):
+    with span(trace_id, "hybrid_search") as s:
         response = await hybrid_search(query=hyde_response, allowed_repos=allowed_repos)
+        s["metadata"]["num_results"] = len(response)
 
     # Step 3: Rerank — cross-encoder scores all 20 (query, chunk) pairs jointly → top 5
     # Uses original query here so reranker judges relevance to what user actually asked
-    with span(trace_id, "rerank_async"):
+    with span(trace_id, "rerank_async") as s:
         result = await rerank_async(query=query, docs=response)
+        s["metadata"]["num_results"] = len(result)
 
     return result

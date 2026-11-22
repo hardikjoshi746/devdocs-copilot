@@ -15,6 +15,8 @@ from ingestion.chunkers import Document
 from rank_bm25 import BM25Okapi
 import json
 from pathlib import Path
+import asyncio
+import functools 
 
 
 def sparse_search(query: str, n_results: int = 10, allowed_repos: list[str] | None = None) -> list[Document]:
@@ -77,3 +79,8 @@ def sparse_search(query: str, n_results: int = 10, allowed_repos: list[str] | No
     )[:n_results]
 
     return [filtered_chunks[i] for i in top_indices]
+
+async def sparse_search_async(query: str, n_results: int = 10, allowed_repos: list[str] | None = None) -> list[Document]:
+    loop = asyncio.get_event_loop()
+    fn = functools.partial(sparse_search, query, n_results=n_results, allowed_repos=allowed_repos)
+    return await loop.run_in_executor(None, fn)

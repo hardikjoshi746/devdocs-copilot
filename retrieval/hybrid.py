@@ -20,8 +20,9 @@ Why RRF over score averaging?
 
 from ingestion.chunkers import Document
 from retrieval.dense import dense_search
-from retrieval.sparse import sparse_search
+from retrieval.sparse import sparse_search_async
 from collections import defaultdict
+import asyncio
 
 
 async def hybrid_search(
@@ -36,8 +37,10 @@ async def hybrid_search(
     is enforced at both the vector-store level (Chroma where clause) and
     the BM25 post-filter, giving defense in depth.
     """
-    dense_results = await dense_search(query, n_results=20, allowed_repos=allowed_repos)
-    sparse_results = sparse_search(query, n_results=20, allowed_repos=allowed_repos)
+    dense_results, sparse_results = await asyncio.gather(
+        dense_search(query, n_results=20, allowed_repos=allowed_repos),
+        sparse_search_async(query, n_results=20, allowed_repos=allowed_repos),
+    )
 
     # RRF accumulator — defaultdict(float) initializes missing keys to 0.0
     # so we can += without checking if the key exists first

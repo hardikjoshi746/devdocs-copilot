@@ -290,11 +290,13 @@ async def query(
         if quality == "EXPAND":
             docs = _load_parent_chunks(docs)
 
-        with span(trace_id, "generate"):
+        with span(trace_id, "generate") as s:
             result = await generate(
                 validated_question, docs,
                 canary=canary_prompt_fragment(),
             )
+            s["metadata"]["input_tokens"] = result["usage"]["input_tokens"]
+            s["metadata"]["output_tokens"] = result["usage"]["output_tokens"]
             log("tokens_used", trace_id=trace_id, question=validated_question, **result["usage"])
 
         # Canary check — if the model echoed the system-prompt secret, a poisoned
@@ -304,8 +306,10 @@ async def query(
             log("canary_leak_detected", trace_id=trace_id, question=validated_question)
             return JSONResponse(status_code=503, content={"error": "retrieval_quality_too_low"})
 
-        with span(trace_id, "check_faithfulness"):
-            filtered_answer = await check_faithfulness(result["answer"], docs)
+        with span(trace_id, "check_faithfulness") as s:
+            filtered_answer, faith_usage = await check_faithfulness(result["answer"], docs)
+            s["metadata"]["input_tokens"] = faith_usage["input_tokens"]
+            s["metadata"]["output_tokens"] = faith_usage["output_tokens"]
 
     # 4. Mask PII in the final answer and citation sources before returning.
     # Citations include source file paths and chunk IDs — these could expose

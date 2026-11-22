@@ -55,4 +55,5 @@ async def check_faithfulness(answer: str, docs: list[Document]) -> str:
         max_tokens=1024,
         messages=[{"role": "user", "content": prompt}]
     )
-    return response.content[0].text
+    usage = {"input_tokens": response.usage.input_tokens, "output_tokens": response.usage.output_tokens}
+    return response.content[0].text, usage
