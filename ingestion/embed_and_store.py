@@ -2,7 +2,9 @@ from dataclasses import asdict
 from ingestion.chunkers import Document
 import os
 import re
+import asyncio
 from openai import AsyncOpenAI
+from anthropic import AsyncAnthropic
 import chromadb
 from rank_bm25 import BM25Okapi
 from pathlib import Path
@@ -82,6 +84,15 @@ async def embed_and_store(documents: list[Document]) -> bool:
         or _content_hash(doc.content) != exsisting_hashes[doc.id]
     ]
 
+    anthropic_client = AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+
+    ctx_batch_size = 20
+    contextisation = []
+    for i in range(0, len(to_embed), ctx_batch_size):
+        batch = to_embed[i: i + ctx_batch_size]
+        results = await asyncio.gather(*[_contextualize_chunk(anthropic_client, doc) for doc in batch])
+        contextisation.extend(results)
+
     to_delete = [
         id for id in exsisting_hashes
         if id not in new_ids
@@ -95,6 +106,9 @@ async def embed_and_store(documents: list[Document]) -> bool:
 
     for i in range(0, len(to_embed), batch_size):
         batch = to_embed[i: i + batch_size]
+        # Enriched content used for embedding — context sentence + original content.
+        # Original doc.content is stored in Chroma so the LLM sees clean code/docs.
+        enriched_batch = contextisation[i: i + batch_size]
 
         # Single API call for the whole batch — returns one embedding per input.
         # text-embedding-3-small produces 1536-dimensional vectors.
@@ -102,7 +116,7 @@ async def embed_and_store(documents: list[Document]) -> bool:
         # Character-based truncation is imprecise but avoids adding tiktoken dependency.
         response = await client.embeddings.create(
             model="text-embedding-3-small",
-            input=[doc.content[:30000] for doc in batch],
+            input=[content[:30000] for content in enriched_batch],
         )
 
         # response.data[i].embedding corresponds to batch[i] — order is preserved.
@@ -160,9 +174,39 @@ async def embed_and_store(documents: list[Document]) -> bool:
     with chunk_path.open("w") as f:
         for doc in documents:
             f.write(json.dumps(asdict(doc)) + "\n")
-    
+
     return len(to_embed) > 0
 
 
+async def _contextualize_chunk(client: AsyncAnthropic, doc: Document) -> str:
+    """Returns enriched content = context sentence + original content."""
+    # Build a type-specific prompt
+    if doc.type == "code":
+        prompt = (
+            f"In one sentence, describe what this code chunk does. "
+            f"Mention the repo '{doc.metadata.get('repo', '')}', "
+            f"file '{doc.source}', and function/class name if present.\n\n"
+            f"{doc.content[:1000]}"
+        )
+    elif doc.type == "doc":
+        prompt = (
+            f"In one sentence, describe what this documentation section explains. "
+            f"The section heading is '{doc.metadata.get('heading', '')}' "
+            f"from file '{doc.source}'.\n\n"
+            f"{doc.content[:1000]}"
+        )
+    else: # issue
+        prompt = (
+            f"In one sentence, describe what this GitHub issue is about. "
+            f"Issue number: {doc.metadata.get('issue_number', '')}.\n\n"
+            f"{doc.content[:1000]}"
+        )
 
+    response = await client.messages.create(
+        model = "claude-haiku-4-5-20251001",
+        max_tokens = 100,
+        messages = [{"role": "user", "content": prompt}],
+    )
 
+    context_sentence = response.content[0].text.strip()
+    return f"{context_sentence}\n\n{doc.content}"
