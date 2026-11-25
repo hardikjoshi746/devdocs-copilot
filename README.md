@@ -127,21 +127,24 @@ Manual end-to-end tests run against the live API (November 2025). Each query was
   ┌───────────────────▼─────────────────────────┐
   │                Query Pipeline               │
   │                                             │
-  │  [1] HyDE Rewriter        (Haiku 4.5)       │
+  │  [1] Query Router         (Haiku 4.5)       │◄── code / doc / issue / general
   │          │                                  │
-  │  [2] Hybrid Retriever                       │
+  │  [2] HyDE Rewriter        (Haiku 4.5)       │
+  │          │                                  │
+  │  [3] Hybrid Retriever                       │
   │       Dense (Chroma) + Sparse (BM25) + RRF  │
+  │       Filtered by content_type from router  │
   │          │                                  │
-  │  [3] Cross-Encoder Reranker                 │
+  │  [4] Cross-Encoder Reranker                 │
   │       top-20 → top-5                        │
   │          │                                  │
-  │  [4] Retrieval Evaluator  (Haiku 4.5)       │◄── GOOD / EXPAND / ABSTAIN
+  │  [5] Retrieval Evaluator  (Haiku 4.5)       │◄── GOOD / EXPAND / ABSTAIN
   │          │                                  │
-  │  [5] Claude Generator     (Sonnet 4.6)      │
+  │  [6] Claude Generator     (Sonnet 4.6)      │
   │       + Source Citations                    │
   │       + Canary leak check                   │◄── 503 if system prompt exfiltrated
   │          │                                  │
-  │  [6] Faithfulness Check   (Sonnet 4.6)      │
+  │  [7] Faithfulness Check   (Haiku 4.5)       │
   │          │                                  │
   │  [7] PII Masking          (Presidio)        │◄── mask emails, phones, tokens in answer + citations
   └───────────────────┬─────────────────────────┘
@@ -416,7 +419,8 @@ adRag/
 │
 ├── query/
 │   ├── rewriter.py             # HyDE rewriter (Haiku 4.5)
-│   └── pipeline.py             # HyDE → hybrid search → rerank
+│   ├── router.py               # classifies query → code / doc / issue / general
+│   └── pipeline.py             # route → HyDE → hybrid search → rerank
 │
 ├── evaluator/
 │   ├── retrieval_evaluator.py  # score chunks, route GOOD / EXPAND / ABSTAIN
@@ -450,7 +454,10 @@ adRag/
 │   ├── test_chunkers.py
 │   ├── test_retrieval.py
 │   ├── test_api.py
-│   └── test_security.py        # guardrails, JWT auth, rate limiting, pickle RCE fix
+│   ├── test_security.py        # guardrails, JWT auth, rate limiting, pickle RCE fix
+│   ├── test_router.py          # query router: categories, normalisation, fallback
+│   ├── test_content_type_filter.py  # content_type filtering in dense, sparse, hybrid
+│   └── test_mcp.py             # MCP server: happy path, 503, connection error, auth
 │
 └── logs/
     └── app.jsonl

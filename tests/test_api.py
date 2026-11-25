@@ -56,10 +56,13 @@ def test_health_returns_status_ok():
 # /query — GOOD path
 # ---------------------------------------------------------------------------
 
+MOCK_FAITHFULNESS_RESULT = ("Use HTTPException to return error responses.", {"input_tokens": 50, "output_tokens": 20})
+
+
 @patch("api.main.pipeline", new_callable=AsyncMock, return_value=MOCK_DOCS)
 @patch("api.main.evaluate", new_callable=AsyncMock, return_value="GOOD")
 @patch("api.main.generate", new_callable=AsyncMock, return_value=MOCK_GENERATE_RESULT)
-@patch("api.main.check_faithfulness", new_callable=AsyncMock, return_value="Use HTTPException to return error responses.")
+@patch("api.main.check_faithfulness", new_callable=AsyncMock, return_value=MOCK_FAITHFULNESS_RESULT)
 @patch("api.main.mask_pii", return_value="Use HTTPException to return error responses.")
 def test_query_good_returns_200(mock_pii, mock_faith, mock_gen, mock_eval, mock_pipeline, auth_client):
     response = auth_client.post("/query", json={"question": "how does HTTPException work?"})
@@ -69,7 +72,7 @@ def test_query_good_returns_200(mock_pii, mock_faith, mock_gen, mock_eval, mock_
 @patch("api.main.pipeline", new_callable=AsyncMock, return_value=MOCK_DOCS)
 @patch("api.main.evaluate", new_callable=AsyncMock, return_value="GOOD")
 @patch("api.main.generate", new_callable=AsyncMock, return_value=MOCK_GENERATE_RESULT)
-@patch("api.main.check_faithfulness", new_callable=AsyncMock, return_value="Use HTTPException to return error responses.")
+@patch("api.main.check_faithfulness", new_callable=AsyncMock, return_value=MOCK_FAITHFULNESS_RESULT)
 @patch("api.main.mask_pii", return_value="Use HTTPException to return error responses.")
 def test_query_good_has_answer(mock_pii, mock_faith, mock_gen, mock_eval, mock_pipeline, auth_client):
     response = auth_client.post("/query", json={"question": "how does HTTPException work?"})
@@ -79,7 +82,7 @@ def test_query_good_has_answer(mock_pii, mock_faith, mock_gen, mock_eval, mock_p
 @patch("api.main.pipeline", new_callable=AsyncMock, return_value=MOCK_DOCS)
 @patch("api.main.evaluate", new_callable=AsyncMock, return_value="GOOD")
 @patch("api.main.generate", new_callable=AsyncMock, return_value=MOCK_GENERATE_RESULT)
-@patch("api.main.check_faithfulness", new_callable=AsyncMock, return_value="Use HTTPException to return error responses.")
+@patch("api.main.check_faithfulness", new_callable=AsyncMock, return_value=MOCK_FAITHFULNESS_RESULT)
 @patch("api.main.mask_pii", return_value="Use HTTPException to return error responses.")
 def test_query_good_has_citations(mock_pii, mock_faith, mock_gen, mock_eval, mock_pipeline, auth_client):
     response = auth_client.post("/query", json={"question": "how does HTTPException work?"})
@@ -90,7 +93,7 @@ def test_query_good_has_citations(mock_pii, mock_faith, mock_gen, mock_eval, moc
 @patch("api.main.pipeline", new_callable=AsyncMock, return_value=MOCK_DOCS)
 @patch("api.main.evaluate", new_callable=AsyncMock, return_value="GOOD")
 @patch("api.main.generate", new_callable=AsyncMock, return_value=MOCK_GENERATE_RESULT)
-@patch("api.main.check_faithfulness", new_callable=AsyncMock, return_value="Use HTTPException to return error responses.")
+@patch("api.main.check_faithfulness", new_callable=AsyncMock, return_value=MOCK_FAITHFULNESS_RESULT)
 @patch("api.main.mask_pii", return_value="Use HTTPException to return error responses.")
 def test_query_good_retrieval_quality(mock_pii, mock_faith, mock_gen, mock_eval, mock_pipeline, auth_client):
     response = auth_client.post("/query", json={"question": "how does HTTPException work?"})
@@ -122,7 +125,7 @@ def test_query_abstain_error_message(mock_eval, mock_pipeline, auth_client):
 @patch("api.main.pipeline", new_callable=AsyncMock, return_value=MOCK_DOCS)
 @patch("api.main.evaluate", new_callable=AsyncMock, return_value="EXPAND")
 @patch("api.main.generate", new_callable=AsyncMock, return_value=MOCK_GENERATE_RESULT)
-@patch("api.main.check_faithfulness", new_callable=AsyncMock, return_value="Use HTTPException to return error responses.")
+@patch("api.main.check_faithfulness", new_callable=AsyncMock, return_value=MOCK_FAITHFULNESS_RESULT)
 @patch("api.main.mask_pii", return_value="Use HTTPException to return error responses.")
 def test_query_expand_returns_200(mock_pii, mock_faith, mock_gen, mock_eval, mock_pipeline, auth_client):
     response = auth_client.post("/query", json={"question": "how does HTTPException work?"})
@@ -132,7 +135,7 @@ def test_query_expand_returns_200(mock_pii, mock_faith, mock_gen, mock_eval, moc
 @patch("api.main.pipeline", new_callable=AsyncMock, return_value=MOCK_DOCS)
 @patch("api.main.evaluate", new_callable=AsyncMock, return_value="EXPAND")
 @patch("api.main.generate", new_callable=AsyncMock, return_value=MOCK_GENERATE_RESULT)
-@patch("api.main.check_faithfulness", new_callable=AsyncMock, return_value="Use HTTPException to return error responses.")
+@patch("api.main.check_faithfulness", new_callable=AsyncMock, return_value=MOCK_FAITHFULNESS_RESULT)
 @patch("api.main.mask_pii", return_value="Use HTTPException to return error responses.")
 def test_query_expand_retrieval_quality(mock_pii, mock_faith, mock_gen, mock_eval, mock_pipeline, auth_client):
     response = auth_client.post("/query", json={"question": "how does HTTPException work?"})

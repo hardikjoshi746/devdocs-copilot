@@ -19,7 +19,7 @@ import asyncio
 import functools 
 
 
-def sparse_search(query: str, n_results: int = 10, allowed_repos: list[str] | None = None) -> list[Document]:
+def sparse_search(query: str, n_results: int = 10, allowed_repos: list[str] | None = None, content_type: str | None = None,) -> list[Document]:
     """
     Score all chunks against the query using BM25 and return the top-n.
 
@@ -57,13 +57,11 @@ def sparse_search(query: str, n_results: int = 10, allowed_repos: list[str] | No
 
     # Apply repo filter before ranking so restricted chunks never surface.
     # BM25 indices are positional — build a filtered view first.
-    if allowed_repos:
-        filtered = [
-            (i, chunk) for i, chunk in enumerate(chunks)
-            if chunk.metadata.get("repo") in allowed_repos
-        ]
-    else:
-        filtered = list(enumerate(chunks))
+    filtered = [
+        (i, chunk) for i, chunk in enumerate(chunks)
+        if (not allowed_repos or chunk.metadata.get("repo") in allowed_repos)
+        and (not content_type or chunk.type == content_type)
+    ]
 
     if not filtered:
         return []
@@ -80,7 +78,7 @@ def sparse_search(query: str, n_results: int = 10, allowed_repos: list[str] | No
 
     return [filtered_chunks[i] for i in top_indices]
 
-async def sparse_search_async(query: str, n_results: int = 10, allowed_repos: list[str] | None = None) -> list[Document]:
+async def sparse_search_async(query: str, n_results: int = 10, allowed_repos: list[str] | None = None, content_type: str | None = None,) -> list[Document]:
     loop = asyncio.get_event_loop()
-    fn = functools.partial(sparse_search, query, n_results=n_results, allowed_repos=allowed_repos)
+    fn = functools.partial(sparse_search, query, n_results=n_results, allowed_repos=allowed_repos, content_type=content_type)
     return await loop.run_in_executor(None, fn)

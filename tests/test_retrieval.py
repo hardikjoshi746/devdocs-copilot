@@ -46,10 +46,10 @@ def test_sparse_respects_n_results():
 
 
 def test_sparse_relevant_query():
-    results = sparse_search("HTTPException", n_results=5)
+    results = sparse_search("scrape", n_results=5)
     ids = [r.id for r in results]
-    # At least one result should be from handling-errors or exceptions
-    assert any("exception" in id.lower() or "error" in id.lower() for id in ids)
+    # At least one result should be from the job_scrapper repo
+    assert any("scrapper" in id.lower() or "scrape" in id.lower() for id in ids)
 
 
 def test_sparse_empty_query_returns_results():

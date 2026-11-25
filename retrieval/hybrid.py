@@ -29,6 +29,7 @@ async def hybrid_search(
     query: str,
     n_results: int = 10,
     allowed_repos: list[str] | None = None,
+    content_type: str | None = None,
 ) -> list[Document]:
     """
     Run dense and sparse search, fuse results with RRF, return top-n.
@@ -36,10 +37,16 @@ async def hybrid_search(
     allowed_repos is threaded to both retrievers so the repo-access filter
     is enforced at both the vector-store level (Chroma where clause) and
     the BM25 post-filter, giving defense in depth.
+
+    content_type filters by chunk type (code/doc/issue). "general" or None
+    means no filter — search all chunk types.
     """
+    # "general" means no filter — treat it the same as None
+    type_filter = content_type if content_type != "general" else None
+
     dense_results, sparse_results = await asyncio.gather(
-        dense_search(query, n_results=20, allowed_repos=allowed_repos),
-        sparse_search_async(query, n_results=20, allowed_repos=allowed_repos),
+        dense_search(query, n_results=20, allowed_repos=allowed_repos, content_type=type_filter),
+        sparse_search_async(query, n_results=20, allowed_repos=allowed_repos, content_type=type_filter),
     )
 
     # RRF accumulator — defaultdict(float) initializes missing keys to 0.0

@@ -6,7 +6,6 @@ import asyncio
 from openai import AsyncOpenAI
 from anthropic import AsyncAnthropic
 import chromadb
-from rank_bm25 import BM25Okapi
 from pathlib import Path
 import json
 import hashlib
@@ -151,10 +150,7 @@ async def embed_and_store(documents: list[Document]) -> bool:
     # for code identifiers (HTTPException, status_code) that dense search misses.
     # BM25Okapi is the standard variant — ranks by term frequency + inverse doc frequency.
     tokenized = [doc.content.lower().split() for doc in documents]
-    bm25 = BM25Okapi(tokenized)
 
-    # Pickle serializes the BM25 object to bytes so it can be loaded instantly
-    # on startup without rebuilding from scratch. "wb" = write binary (pickle output).
     # Serialize the tokenized corpus as JSON instead of pickling the BM25 object.
     # pickle.load() on an untrusted file is an RCE vector — JSON is safe.
     # sparse.py rebuilds BM25Okapi(corpus) at load time; it's deterministic so

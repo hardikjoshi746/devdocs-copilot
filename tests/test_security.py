@@ -296,7 +296,8 @@ def test_query_valid_token_passes_auth():
     )
     with patch("api.main._redis", None), \
          patch("api.main.pipeline", new_callable=AsyncMock, return_value=[]), \
-         patch("api.main.evaluate", new_callable=AsyncMock, return_value="ABSTAIN"):
+         patch("api.main.evaluate", new_callable=AsyncMock, return_value="ABSTAIN"), \
+         patch("api.guardrails._llm_injection_check", new=AsyncMock(return_value=False)):
         client = TestClient(app)
         response = client.post(
             "/query",
@@ -364,7 +365,8 @@ def test_rate_limit_returns_429_via_api(valid_token):
     mock_redis.get = AsyncMock(return_value=None)  # no cache hit
 
     app.dependency_overrides[verify_token] = lambda: ("test_tenant", ["fastapi"])
-    with patch("api.main._redis", mock_redis):
+    with patch("api.main._redis", mock_redis), \
+         patch("api.guardrails._llm_injection_check", new=AsyncMock(return_value=False)):
         client = TestClient(app)
         response = client.post("/query", json={"question": "how does FastAPI work?"})
     app.dependency_overrides.clear()
@@ -588,7 +590,13 @@ def test_bm25_stored_as_json_corpus():
     def fake_json_dump(obj, f, **kwargs):
         captured_json["corpus"] = obj
 
+    mock_anthropic = AsyncMock()
+    mock_anthropic.messages.create.return_value = MagicMock(
+        content=[MagicMock(text="This chunk does X.")]
+    )
+
     with patch("ingestion.embed_and_store.AsyncOpenAI", return_value=mock_openai), \
+         patch("ingestion.embed_and_store.AsyncAnthropic", return_value=mock_anthropic), \
          patch("ingestion.embed_and_store.chromadb.PersistentClient") as mock_chroma, \
          patch("ingestion.embed_and_store.json.dump", side_effect=fake_json_dump), \
          patch("ingestion.embed_and_store.Path") as mock_path:

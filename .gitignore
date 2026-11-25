@@ -20,6 +20,7 @@ uv.lock         # commit this if working in a team; fine to ignore for solo lear
 
 # Personal — not for public repo
 LEARNING.md
+SUMMARY.md
 
 # IDE
 .vscode/
