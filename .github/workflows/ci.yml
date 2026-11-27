@@ -31,8 +31,10 @@ jobs:
 
       - name: Run tests
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Real keys are only needed for integration tests — unit tests mock all API calls.
+          # Dummy values prevent SDK clients from raising at module import time.
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || 'sk-dummy-for-ci' }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY || 'sk-ant-dummy-for-ci' }}
           JWT_SIGNING_SECRET: test-secret-for-ci-only
           REDIS_URL: redis://localhost:6379
         run: pytest --tb=short -q
