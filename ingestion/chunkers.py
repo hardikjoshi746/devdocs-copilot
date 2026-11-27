@@ -3,26 +3,6 @@ from typing import Literal
 import ast
 from pathlib import Path
 
-import tree_sitter_python as tspython
-import tree_sitter_javascript as tsjavascript
-import tree_sitter_typescript as tstypescript
-import tree_sitter_java as tsjava
-from tree_sitter import Language, Parser
-
-
-# ---------------------------------------------------------------------------
-# Language registry — extension → (tree-sitter language module, language name)
-# ---------------------------------------------------------------------------
-
-_LANGUAGE_MAP: dict[str, tuple] = {
-    ".py":   (tspython.language(),                 "python"),
-    ".js":   (tsjavascript.language(),             "javascript"),
-    ".jsx":  (tsjavascript.language(),             "javascript"),  # React JSX
-    ".ts":   (tstypescript.language_typescript(),  "typescript"),
-    ".tsx":  (tstypescript.language_tsx(),         "typescript"),  # React TSX
-    ".java": (tsjava.language(),                   "java"),
-}
-
 # Node type names that represent a function or class in each language's grammar
 _FUNCTION_NODES = {
     "python":     {"function_definition", "async_function_definition"},
@@ -57,13 +37,30 @@ class Document:
 # Language detection
 # ---------------------------------------------------------------------------
 
+def _build_language_map() -> dict[str, tuple]:
+    """Build tree-sitter language map — imported lazily so the API container
+    (which doesn't install tree-sitter) can still import this module."""
+    import tree_sitter_python as tspython
+    import tree_sitter_javascript as tsjavascript
+    import tree_sitter_typescript as tstypescript
+    import tree_sitter_java as tsjava
+    return {
+        ".py":   (tspython.language(),                 "python"),
+        ".js":   (tsjavascript.language(),             "javascript"),
+        ".jsx":  (tsjavascript.language(),             "javascript"),
+        ".ts":   (tstypescript.language_typescript(),  "typescript"),
+        ".tsx":  (tstypescript.language_tsx(),         "typescript"),
+        ".java": (tsjava.language(),                   "java"),
+    }
+
+
 def detect_language(filepath: str) -> str | None:
     """
     Returns the language name for a given file path based on its extension,
     or None if the extension is not in the supported language map.
     """
     ext = Path(filepath).suffix.lower()
-    entry = _LANGUAGE_MAP.get(ext)
+    entry = _build_language_map().get(ext)
     return entry[1] if entry else None
 
 
@@ -170,8 +167,10 @@ def chunk_code_file(source: str, filepath: str, repo: str = "") -> list[Document
     - language: detected language string
     - repo: repo slug passed by the caller (e.g. "tiangolo/fastapi")
     """
+    from tree_sitter import Language, Parser
+
     ext = Path(filepath).suffix.lower()
-    language_entry = _LANGUAGE_MAP.get(ext)
+    language_entry = _build_language_map().get(ext)
 
     if language_entry is None:
         return _chunk_fallback(source, filepath, repo)

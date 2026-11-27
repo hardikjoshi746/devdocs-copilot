@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import time
@@ -46,9 +47,10 @@ _redis: Redis | None = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _redis
+    global _redis, _chunk_index
     redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379")
     _redis = Redis.from_url(redis_url, decode_responses=True)
+    pass  # chunk index is loaded lazily on first EXPAND request
     yield
     await _redis.aclose()
 
@@ -87,11 +89,6 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 
 _chunk_index: dict[str, Document] = {}
 _chunks_path = Path("data/chunks/chunks.jsonl")
-if _chunks_path.exists():
-    with _chunks_path.open() as f:
-        for line in f:
-            chunk = Document(**json.loads(line))
-            _chunk_index[chunk.id] = chunk
 
 
 def _load_parent_chunks(docs: list[Document]) -> list[Document]:
